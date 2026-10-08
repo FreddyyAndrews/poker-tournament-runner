@@ -71,7 +71,9 @@ def decide(game_state: dict) -> dict:
     game_state keys:
       hand_id          str   — unique hand identifier
       street           str   — "preflop" | "flop" | "turn" | "river"
-      seat_to_act      int   — your seat number (0-5)
+      seat_to_act      int   — your seat number this hand (0-8). Seats can change
+                               between hands; use your_bot_id for identity
+      your_bot_id      str   — your bot's name (stable across hands)
       pot              int   — total chips in pot
       community_cards  list  — e.g. ["As", "Kd", "7h"] (empty preflop)
       current_bet      int   — highest bet on this street
@@ -82,7 +84,11 @@ def decide(game_state: dict) -> dict:
       your_stack       int   — your remaining chips
       your_bet_this_street int — chips you've already put in this street
       players          list  — public info on all seats (see below)
-      action_log       list  — all actions so far this hand
+      action_log       list  — all actions so far this hand, each
+                               {"seat", "bot_id", "action", "amount"}
+      hand_num         int   — hand number within the match
+      blinds           dict  — {"sb", "bb", "ante"} for this hand
+      button_seat, sb_seat, bb_seat  int — positions this hand
 
     players[i] keys (public info only, no hole cards):
       seat, bot_id, stack, state, is_folded, is_all_in, bet_this_street, hole_cards

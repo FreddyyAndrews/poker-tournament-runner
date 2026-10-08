@@ -200,6 +200,36 @@ def test_heads_up_positions():
     assert state["seat_to_act"] == 1
 
 
+def test_action_log_and_state_identify_bots_by_name():
+    ids = ["alice", "bob", "carol"]
+    eng = PokerEngine("h", ids, dealer_seat=0, ante=5)
+    state = eng.start_hand()
+    assert state["your_bot_id"] == ids[state["seat_to_act"]]
+    state = eng.apply_action(state["seat_to_act"], {"action": "raise", "amount": 300})
+    assert state["your_bot_id"] == ids[state["seat_to_act"]]
+    for entry in state["action_log"]:
+        assert set(entry) == {"seat", "bot_id", "action", "amount"}
+        assert entry["bot_id"] == ids[entry["seat"]]
+    assert [e["bot_id"] for e in state["action_log"] if e["action"] == "ante"] == ids
+    blinds = {e["action"]: e["bot_id"] for e in state["action_log"]
+              if e["action"] in ("small_blind", "big_blind")}
+    assert blinds == {"small_blind": "bob", "big_blind": "carol"}
+    assert state["action_log"][-1] == {"seat": 0, "bot_id": "alice",
+                                       "action": "raise", "amount": 300}
+
+
+def test_bot_id_stable_when_seats_shift():
+    # Hand 1: three players; carol sits in seat 2.
+    eng = PokerEngine("h1", ["alice", "bob", "carol"])
+    eng.start_hand()
+    assert eng.players[2].bot_id == "carol"
+    # Hand 2: bob has busted, so the table is reseated and carol moves to seat 1.
+    eng = PokerEngine("h2", ["alice", "carol"])
+    state = eng.start_hand()
+    carol = [e for e in state["action_log"] if e["bot_id"] == "carol"]
+    assert carol and all(e["seat"] == 1 for e in carol)
+
+
 def test_result_includes_starting_stacks_and_blinds():
     eng = make_engine([3000, 7000], small_blind=100, big_blind=200)
     state = eng.start_hand()

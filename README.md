@@ -83,10 +83,14 @@ cp -r bots/template bots/mybot
 | `current_bet` | `int` | Highest bet this street |
 | `min_raise_to` | `int` | Minimum legal raise total |
 | `players` | `list` | Public info on all seats |
-| `action_log` | `list` | Every action taken this hand (including `ante`, `small_blind`, `big_blind` posts) |
+| `your_bot_id` | `str` | Your bot's name. Stable across hands, unlike seat numbers |
+| `action_log` | `list` | Every action taken this hand, each `{"seat", "bot_id", "action", "amount"}` (including `ante`, `small_blind`, `big_blind` posts) |
+| `match_action_log` | `list` | The last 200 actions across all hands in this match, each `{"hand_num", "seat", "bot_id", "action", "amount"}` |
 | `hand_num` | `int` | Hand number within the match |
 | `blinds` | `dict` | Current blinds, e.g. `{"sb": 50, "bb": 100, "ante": 0}` (these rise in tournaments) |
 | `button_seat` / `sb_seat` / `bb_seat` | `int` | Seats of the button and blinds; compare with `seat_to_act` for your position |
+
+> **Seats vs. names:** seat numbers are positions at the table *for this hand*. When a player busts, the table is reseated and seat numbers shift. To track an opponent across hands, use `bot_id` (in `players`, `action_log` and `match_action_log`), not `seat`.
 
 **Valid return values:**
 

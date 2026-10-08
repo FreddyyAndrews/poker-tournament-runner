@@ -20,7 +20,9 @@ Changes in v2.1 (poker-tournament-runner fork):
   - Never asks a player to act when no decision is possible (e.g. all-in from
     posting a blind, or the only player left who isn't all-in); the board is
     run out instead, with street_start events for each dealt street
-  - game_state includes hand_num, blinds, button_seat, sb_seat, bb_seat
+  - game_state includes hand_num, blinds, button_seat, sb_seat, bb_seat,
+    your_bot_id; every action_log entry carries bot_id (seats can change
+    between hands, bot_id does not)
   - Hand result includes starting_stacks, blinds, button_seat
 """
 
@@ -169,7 +171,7 @@ class PokerEngine:
 
     def apply_action(self, seat: int, raw: dict) -> dict:
         action = self._validate(seat, raw)
-        self.action_log.append(action.to_dict())
+        self._log(seat, action.action, action.amount)
         self._needs_to_act.discard(seat)
         p = self.players[seat]
 
@@ -379,7 +381,7 @@ class PokerEngine:
             self.pot         += amount
             if p.stack == 0:
                 p.is_all_in = True
-            self.action_log.append({"seat": p.seat, "action": "ante", "amount": amount})
+            self._log(p.seat, "ante", amount)
             self._emit("blind", {"seat": p.seat, "bot_id": p.bot_id,
                                  "action": "ante", "amount": amount})
 
@@ -396,8 +398,8 @@ class PokerEngine:
             self.players[sb].is_all_in = True
         if self.players[bb].stack == 0:
             self.players[bb].is_all_in = True
-        self.action_log.append({"seat": sb, "action": "small_blind", "amount": sb_amount})
-        self.action_log.append({"seat": bb, "action": "big_blind",   "amount": bb_amount})
+        self._log(sb, "small_blind", sb_amount)
+        self._log(bb, "big_blind",   bb_amount)
         self._emit("blind", {"seat": sb, "bot_id": self.players[sb].bot_id,
                              "action": "small_blind", "amount": sb_amount})
         self._emit("blind", {"seat": bb, "bot_id": self.players[bb].bot_id,
@@ -590,6 +592,17 @@ class PokerEngine:
     # Events
     # -----------------------------------------------------------------------
 
+    def _log(self, seat: int, action: str, amount: int):
+        """Append to the bot-visible action_log. bot_id is the stable identity;
+        seat numbers are positions at this hand's table and can change between
+        hands (e.g. when someone busts and the table is reseated)."""
+        self.action_log.append({
+            "seat":   seat,
+            "bot_id": self.players[seat].bot_id,
+            "action": action,
+            "amount": amount,
+        })
+
     def _emit(self, event_type: str, data: dict):
         self.events.append({
             "type":   event_type,
@@ -622,6 +635,7 @@ class PokerEngine:
             "hand_id":               self.hand_id,
             "street":                self.street,
             "seat_to_act":           seat,
+            "your_bot_id":           p.bot_id,
             "pot":                   self.pot,
             "community_cards":       [str(c) for c in self.community_cards],
             "current_bet":           self.current_bet,
