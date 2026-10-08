@@ -71,6 +71,21 @@ MATCH_LOG_MAX_ENTRIES = 200
 # Bot mount preparation
 # ---------------------------------------------------------------------------
 
+# Single-file and zipped bots are unpacked into a temp dir that gets mounted
+# into the container. It lives inside the repo by default because Docker VMs
+# on macOS (Colima, and Docker Desktop in some setups) only share the home
+# directory with containers, not the system temp dir.
+BOT_MOUNT_DIR = Path(os.environ.get("BOT_MOUNT_DIR",
+                                    Path(__file__).resolve().parent.parent / ".bot_mounts"))
+
+
+def _mount_tmpdir():
+    BOT_MOUNT_DIR.mkdir(parents=True, exist_ok=True)
+    tmpdir = tempfile.mkdtemp(prefix="bot_", dir=str(BOT_MOUNT_DIR))
+    os.chmod(tmpdir, 0o755)   # readable by the container's non-root user
+    return tmpdir
+
+
 def _prepare_bot_mount(bot_path):
     """Returns (mount_src, cleanup_dir).
     Accepts: directory, .zip archive (extracted into tempdir), or .py file (legacy, copied into tempdir).
@@ -81,7 +96,7 @@ def _prepare_bot_mount(bot_path):
         return p, None
 
     if p.endswith(".zip") and os.path.isfile(p):
-        tmpdir = tempfile.mkdtemp(prefix="fhbot_")
+        tmpdir = _mount_tmpdir()
         with zipfile.ZipFile(p) as zf:
             for member in zf.infolist():
                 name = member.filename
@@ -102,7 +117,7 @@ def _prepare_bot_mount(bot_path):
         return tmpdir, tmpdir
 
     if p.endswith(".py") and os.path.isfile(p):
-        tmpdir = tempfile.mkdtemp(prefix="fhbot_")
+        tmpdir = _mount_tmpdir()
         shutil.copy(p, os.path.join(tmpdir, "bot.py"))
         return tmpdir, tmpdir
 
@@ -141,6 +156,7 @@ class BotProcess:
                              "think_ms_total": 0.0, "think_ms_max": 0.0}
         self._stderr      = collections.deque(maxlen=STDERR_LINES)
         self._proc        = None
+        self._container   = None
         self._replies     = None
         self._cleanup_dir = None
 
@@ -163,16 +179,20 @@ class BotProcess:
             extra_env["BOT_SEED"] = str(self.seed)
 
         if self.use_docker:
+            # Named, so the container itself can be killed: killing the
+            # `docker run` client alone leaves a stuck container running.
+            self._container = "bot-" + uuid.uuid4().hex[:12]
             cmd = [
                 "docker", "run",
                 "--rm",
+                "--name",    self._container,
                 "-i",
                 "--network", "none",
                 "--memory",  CONTAINER_MEMORY,
                 "--memory-swap", CONTAINER_MEMORY,
                 "--cpus",    CONTAINER_CPUS,
                 "--read-only",
-                "--no-new-privileges",
+                "--security-opt", "no-new-privileges",
                 "--user",    "1000:1000",
                 "--tmpfs",   "/tmp:size=" + CONTAINER_TMPFS_SIZE,
                 "-v",        self._mount_src + ":/bot:ro",
@@ -232,6 +252,9 @@ class BotProcess:
     def _kill(self):
         if self._proc is None:
             return
+        if self.use_docker and self._container:
+            subprocess.run(["docker", "kill", self._container],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         try:
             self._proc.kill()
             self._proc.wait(timeout=5)
@@ -336,7 +359,8 @@ class BotProcess:
             s["errors"] += 1
             if err in ("timeout", "host_timeout"):
                 s["timeouts"] += 1
-            self.errors.append(err)
+            if err != "disabled":   # already recorded once as disabled_after_restarts
+                self.errors.append(err)
         return reply
 
     def summary(self):
@@ -366,9 +390,9 @@ class BotProcess:
                 pass
             try:
                 self._proc.wait(timeout=5)
+                self._proc = None
             except subprocess.TimeoutExpired:
-                self._proc.kill()
-            self._proc = None
+                self._kill()
         if self._cleanup_dir and os.path.isdir(self._cleanup_dir):
             shutil.rmtree(self._cleanup_dir, ignore_errors=True)
 

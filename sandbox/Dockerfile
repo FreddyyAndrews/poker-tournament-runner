@@ -6,7 +6,7 @@
 #   --memory 768m           OOM-killed if exceeded (was 256m, bumped May 2026)
 #   --cpus 0.5              half a core max
 #   --read-only             filesystem is read-only
-#   --no-new-privileges     can't escalate permissions
+#   --security-opt no-new-privileges   can't escalate permissions
 #   --user 1000:1000        non-root
 
 # Python 3.10 (not 3.11+) — eval7 0.1.7's pre-generated C files reference
