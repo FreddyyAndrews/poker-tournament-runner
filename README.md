@@ -7,7 +7,7 @@ A toolkit for running No-Limit Texas Hold'em bot competitions.
 
 Forked from [fullhouse-engine](https://github.com/uzlez/fullhouse-engine) (MIT), which provides the poker engine, Docker sandbox, validator and reference bots.
 
-> **Status: early development.** The engine, sandbox, validator, reference bots and single-match runner work today. Everything under [Roadmap](#roadmap) is planned and being built incrementally.
+> **Status: early development.** The engine, sandbox, validator, reference bots, `poker match` and `poker verify` work today. Everything under [Roadmap](#roadmap) is planned and being built incrementally.
 
 ---
 
@@ -35,26 +35,35 @@ cd poker-tournament-runner
 
 python3.10 -m venv .venv && source .venv/bin/activate
 
-# eval7 needs Cython<3 at build time and won't pick it up via build isolation
+# eval7 needs Cython<3 at build time and won't pick it up via build isolation.
+# This also installs the `poker` command.
 make install
 
-make test           # engine unit tests
-python3 demo.py     # live demo at http://localhost:5001
+make test           # all tests
 ```
 
-`demo.py` shows six reference bots playing each other live, with a leaderboard and hand replay.
-
-> **macOS:** the demo uses port 5001 because macOS binds port 5000 to AirPlay Receiver. Override with `DEMO_PORT=8080 python3 demo.py`.
-
-Run a single match from the terminal:
+### Playing matches
 
 ```bash
-python3 sandbox/match.py bots/mybot/bot.py bots/shark/bot.py --hands 400 [--seed 7] [--time-limit-ms 2000] [--docker] [--json]
+poker bots                                        # list bots in my_bots/ and bots/
+poker match shark aggressor --hands 500           # heads-up, 500 hands at 50/100
+poker match shark aggressor mathematician template --freezeout --blinds turbo -v
+poker match my_bots/mybot shark --stack 20000 --blinds 100/200/25 --seed 7
+poker verify data/runs/<match-id>                 # replay the log and check it
 ```
 
-Every match has a seed (printed if you didn't pass one). The same seed and bots replay the same match: same cards, and each bot's `random`/`numpy.random` is seeded from it too. The summary shows each bot's decision count, think time, timeouts and errors.
+- **Bots** are names from `my_bots/` or `bots/`, or paths to a `bot.py`, a bot folder or a `bot.zip`. 2–9 per table.
+- **Fixed mode** (default) plays `--hands` hands. **`--freezeout`** plays until one bot has every chip, with blinds rising by hand count (`--max-hands` caps it).
+- **`--blinds`** takes flat blinds `SB/BB[/ANTE]` or a structure: `turbo` (10 hands per level), `standard` (20) or `slow` (40). Structures scale with `--stack`.
+- **Seats are fixed** for the whole match, and the button moves to the next occupied seat each hand.
+- **Results** show each bot's place, final stack, chip delta, bb/100, hands played, think time, timeouts and errors. Add `--json` for machine-readable output.
+- **Every match is logged** to `data/runs/<match-id>/`:
+  - `events.jsonl` records every card, post, decision, award and elimination. Each decision includes what the bot saw, its reply, how it was applied, its think time, logs and `debug`.
+  - `summary.json` holds the results.
+- **`poker verify`** replays the log through the engine with the recorded seed and decisions, and checks that the cards, chips, awards and places all match. Any edit to the log is caught.
+- **Seeds:** every match has one (generated if you don't pass `--seed`). The same seed and bots replay the same match: same cards, and each bot's `random`/`numpy.random` is seeded from it too.
 
-To run bots in the Docker sandbox (`--docker`, the competition setup), build the image first, and rebuild it whenever `sandbox/runner.py` changes:
+To run bots in the Docker sandbox (`poker match --docker`, the competition setup), build the image first, and rebuild it whenever `sandbox/runner.py` changes:
 
 ```bash
 ./sandbox.sh build
@@ -282,7 +291,7 @@ docs/                    bot guide, organizer guide (GitHub Classroom), MCP, CLI
 
 ### Milestones
 
-1. **Engine + core:** engine patches, runner protocol v2, seats, tables, event logs, `poker match`, `poker verify`
+1. ✅ **Engine + core:** engine patches, runner protocol v2, seats, tables, event logs, `poker match`, `poker verify`
 2. **Formats + metrics:** all formats, series, stages, stats, `poker run/results/bench`
 3. **API + web UI:** launcher, live/replay table, decision inspector, exports
 4. **Remote seats:** human seats, MCP server, decision timers
@@ -296,11 +305,13 @@ Upstream leftovers (`demo.py`, `db/schema.sql`, `CONTRIBUTING.md`) will be repla
 ## Repo structure (current)
 
 ```
+arena/          Match runner: seats, tables, blind structures, event logs, verify, `poker` CLI
 engine/         Game engine: NLHE rules, hand evaluation, chip tracking
-sandbox/        Bot runner, Docker sandbox, validator, local match runner
+sandbox/        Bot runner, Docker sandbox, validator, legacy match runner
 bots/           Reference bots and starter template
-tests/          Engine unit tests
-demo.py         Quick local demo
+tests/          Engine, runner and arena tests
+data/runs/      Match logs (gitignored)
+demo.py         Old upstream demo (to be replaced by the web UI)
 ```
 
 ---

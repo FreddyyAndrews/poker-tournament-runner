@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "poker-tournament-runner"
+version = "0.1.0"
+description = "Run No-Limit Hold'em bot matches and tournaments"
+requires-python = ">=3.10,<3.11"
+license = { text = "MIT" }
+# eval7 must be installed first with --no-build-isolation (see `make install`).
+dependencies = ["eval7==0.1.7"]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[project.scripts]
+poker = "arena.cli:main"
+
+[tool.setuptools]
+packages = ["arena", "engine", "sandbox"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = ["ignore::DeprecationWarning"]

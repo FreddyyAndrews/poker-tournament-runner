@@ -7,6 +7,8 @@ install:
 	pip3 install --no-build-isolation eval7==0.1.7
 	@echo ">> Installing rest of requirements"
 	pip3 install flask numpy scipy treys scikit-learn
+	@echo ">> Installing the poker command (arena package)"
+	pip3 install -e ".[dev]"
 
 demo:
 	python3 demo.py
