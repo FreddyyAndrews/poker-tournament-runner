@@ -1,0 +1,6 @@
+# Single-elimination heads-up knockout. Each tie is a heads-up freezeout.
+# Fields that aren't a power of two give byes to the top seeds.
+format: bracket
+bots: [shark, aggressor, mathematician, ref_bot_2, template]
+seeding: random        # random | given (list order = seed order)
+blinds: standard

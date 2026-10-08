@@ -1,0 +1,6 @@
+# Single-table freezeout (a "sit & go"): 6 bots, rising blinds, last bot standing wins.
+format: table
+bots: [shark, aggressor, mathematician, ref_bot_2, template, shark]
+mode: freezeout
+blinds: turbo          # turbo | standard | slow, or flat like 50/100/10
+starting_stack: 10000

@@ -1,0 +1,8 @@
+# Heads-up duplicate cash match: the same deals twice with seats swapped,
+# every hand starting from 100 big blinds. The fairest 1-v-1 comparison.
+format: table
+bots: [shark, aggressor]
+mode: cash
+hands: 500
+blinds: 50/100
+duplicate: true

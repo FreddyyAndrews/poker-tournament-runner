@@ -1,0 +1,10 @@
+# Multi-table freezeout: tables of 6, balanced and broken as players bust,
+# down to a final table and a winner.
+format: mtt
+bots: [shark, aggressor, mathematician, ref_bot_2, template,
+       shark, aggressor, mathematician, ref_bot_2, template,
+       shark, aggressor, mathematician, ref_bot_2, template]
+table_size: 6
+blinds: standard
+starting_stack: 10000
+workers: 3             # tables played in parallel

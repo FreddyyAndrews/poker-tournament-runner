@@ -1,0 +1,5 @@
+# Everyone plays everyone heads-up: duplicate cash matches, points for wins.
+format: round_robin
+bots: [shark, aggressor, mathematician, ref_bot_2]
+hands: 300
+workers: 4             # matches played in parallel

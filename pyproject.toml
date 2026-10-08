@@ -9,7 +9,7 @@ description = "Run No-Limit Hold'em bot matches and tournaments"
 requires-python = ">=3.10,<3.11"
 license = { text = "MIT" }
 # eval7 must be installed first with --no-build-isolation (see `make install`).
-dependencies = ["eval7==0.1.7"]
+dependencies = ["eval7==0.1.7", "pyyaml>=6"]
 
 [project.optional-dependencies]
 dev = ["pytest"]
@@ -18,7 +18,7 @@ dev = ["pytest"]
 poker = "arena.cli:main"
 
 [tool.setuptools]
-packages = ["arena", "engine", "sandbox"]
+packages = ["arena", "arena.formats", "engine", "sandbox"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

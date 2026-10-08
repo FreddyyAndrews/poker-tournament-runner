@@ -17,9 +17,11 @@ Fields that depend on the live run rather than the cards and decisions (think
 time, bot logs/debug, errors, warmup, process stats) are not compared.
 """
 
+import json
 from collections import defaultdict, deque
+from pathlib import Path
 
-from arena.events import find_run, read_events
+from arena.events import DEFAULT_RUNS_DIR, find_run, read_events
 from arena.seats import Seat
 from arena.table import RUNTIME_STATS, MatchConfig, engine_hash, play_match
 
@@ -64,7 +66,7 @@ def _normalise(event: dict) -> dict:
             e.pop(k, None)
     elif t == "match_start":
         e = {"type": t, "match_id": e["match_id"], "seed": e["seed"], "config": e["config"],
-             "seats": [s["name"] for s in e["seats"]]}
+             "seats": [s["name"] for s in e["seats"]], "tables": e.get("tables")}
     elif t == "match_end":
         e.pop("duration_s", None)
         e["results"] = [{k: v for k, v in r.items() if k not in RUNTIME_STATS}
@@ -114,7 +116,11 @@ def _replay(events) -> list:
             replies[e["bot"]].append(e["reply"])
     seats = [ReplaySeat(s["name"], replies[s["name"]]) for s in start["seats"]]
     log = MemoryLog()
-    play_match(seats, config, start["match_id"], log)
+    if start.get("format") == "mtt":
+        from arena.formats.mtt import play_mtt
+        play_mtt(seats, config, start["table_size"], start["match_id"], log)
+    else:
+        play_match(seats, config, start["match_id"], log)
     leftover = {name: len(q) for name, q in replies.items() if q}
     if leftover:
         raise VerifyError(f"log has decisions the replay never asked for: {leftover}")
@@ -124,36 +130,56 @@ def _replay(events) -> list:
 def _check_accounting(events) -> list:
     problems = []
     start = events[0]
-    stacks = {s["name"]: start["config"]["starting_stack"] for s in start["seats"]}
+    cfg = start["config"]
+    cash = cfg["mode"] == "cash"
+    multi_table = start.get("format") == "mtt"
+    stacks = {s["name"]: cfg["starting_stack"] for s in start["seats"]}
+    bankroll = dict(stacks)                     # cash mode: running total
     total = sum(stacks.values())
     hand = None
     awards = 0
     for e in events:
         t = e["type"]
+        where = f"hand {e.get('hand')}" + (f" table {e['table']}" if "table" in e else "")
         if t == "hand_start":
             hand, awards = e["hand"], 0
             for name, s in e["stacks"].items():
-                if stacks.get(name) != s:
-                    problems.append(f"hand {hand}: {name} starts with {s}, "
-                                    f"previous hand ended with {stacks.get(name)}")
-            dealt_out = [n for n, s in stacks.items() if s > 0 and n not in e["stacks"]]
-            if dealt_out:
-                problems.append(f"hand {hand}: players with chips not dealt in: {dealt_out}")
+                expected = cfg["starting_stack"] if cash else stacks.get(name)
+                if s != expected:
+                    problems.append(f"{where}: {name} starts with {s}, expected {expected}")
+            if not multi_table:
+                dealt_out = [n for n, s in stacks.items() if s > 0 and n not in e["stacks"]]
+                if dealt_out:
+                    problems.append(f"{where}: players with chips not dealt in: {dealt_out}")
         elif t == "award":
             awards += e["amount"]
         elif t == "hand_end":
             if sum(e["deltas"].values()) != 0:
-                problems.append(f"hand {hand}: deltas sum to {sum(e['deltas'].values())}, not 0")
+                problems.append(f"{where}: deltas sum to {sum(e['deltas'].values())}, not 0")
             if awards != e["pot"]:
-                problems.append(f"hand {hand}: awards total {awards} but pot was {e['pot']}")
-            stacks.update(e["stacks"])
-            if sum(stacks.values()) != total:
-                problems.append(f"hand {hand}: {sum(stacks.values())} chips in play, expected {total}")
+                problems.append(f"{where}: awards total {awards} but pot was {e['pot']}")
+            if cash:
+                for name, d in e["deltas"].items():
+                    bankroll[name] += d
+            else:
+                stacks.update(e["stacks"])
+                if sum(stacks.values()) != total:
+                    problems.append(f"{where}: {sum(stacks.values())} chips in play, expected {total}")
+        elif t == "seat_change" and e["reason"] in ("join", "leave", "table_break", "balance", "bust"):
+            if e["stack"] != stacks.get(e["bot"]):
+                problems.append(f"{where}: {e['bot']} moved with {e['stack']} chips, "
+                                f"had {stacks.get(e['bot'])}")
         elif t == "match_end":
+            final = bankroll if cash else stacks
             for r in e["results"]:
-                if r["final_stack"] != stacks.get(r["bot"]):
+                if r["final_stack"] != final.get(r["bot"]):
                     problems.append(f"result for {r['bot']}: final stack {r['final_stack']} "
-                                    f"but the last hand ended with {stacks.get(r['bot'])}")
+                                    f"but the log adds up to {final.get(r['bot'])}")
+            places = [r["place"] for r in e["results"]]
+            if multi_table or cfg["mode"] == "freezeout":
+                if sorted(p for p in places if p) != list(range(1, len(places) + 1)) and \
+                        e.get("stopped") == "one_player_left":
+                    problems.append(f"places are not 1..{len(places)}: {sorted(places)}")
     if events[-1]["type"] != "match_end":
         problems.append("log has no match_end (match incomplete or log truncated)")
     return problems
@@ -196,8 +222,101 @@ def verify_events(events) -> dict:
     return report
 
 
-def verify_run(ref) -> dict:
-    run_dir = find_run(ref)
+def verify_match_dir(run_dir) -> dict:
     report = verify_events(read_events(run_dir))
     report["run_dir"] = str(run_dir)
     return report
+
+
+def _record_from_log(record: dict, events: list) -> dict:
+    """The run.json match record, with results taken from the match log."""
+    end = events[-1] if events and events[-1]["type"] == "match_end" else None
+    if end is None:
+        raise VerifyError(f"match {record['match_id']}: log has no match_end")
+    rec = dict(record)
+    rec["results"] = [{k: r.get(k) for k in record["results"][0]} for r in end["results"]]
+    rec["hands"], rec["stopped"] = end["hands"], end["stopped"]
+    if "players" in rec and sorted(rec["players"]) != sorted(r["bot"] for r in end["results"]):
+        raise VerifyError(f"match {record['match_id']}: run.json says {rec['players']} played, "
+                          f"the log says {[r['bot'] for r in end['results']]}")
+    return rec
+
+
+def verify_run_dir(run_dir) -> dict:
+    """Verify every match log in a tournament run, then recompute the
+    standings from the logs and compare them with run.json."""
+    from arena import formats
+    run_dir = Path(run_dir)
+    run = json.loads((run_dir / formats.RUN_FILE).read_text())
+    report = {"ok": False, "kind": "run", "run_dir": str(run_dir), "format": run.get("format"),
+              "matches": [], "problems": [], "warnings": []}
+    if run.get("status") != "complete":
+        report["problems"].append(f"run status is {run.get('status')!r}, not complete")
+        return report
+    records, logged_ids = [], set()
+    for record in run["matches"]:
+        mdir = run_dir / "matches" / record["match_id"]
+        logged_ids.add(record["match_id"])
+        if not (mdir / "events.jsonl").is_file():
+            report["problems"].append(f"match {record['match_id']}: log missing")
+            continue
+        events = read_events(mdir)
+        m = verify_events(events)
+        report["matches"].append({"match_id": record["match_id"], "ok": m["ok"],
+                                  "hands": m["hands"], "problems": m["problems"]})
+        report["problems"].extend(f"match {record['match_id']}: {p}" for p in m["problems"])
+        report["warnings"].extend(w for w in m["warnings"] if w not in report["warnings"])
+        try:
+            records.append(_record_from_log(record, events))
+        except VerifyError as e:
+            report["problems"].append(str(e))
+    extra = sorted(d.name for d in (run_dir / "matches").iterdir()
+                   if d.is_dir() and d.name not in logged_ids) if (run_dir / "matches").is_dir() else []
+    if extra:
+        report["problems"].append(f"match logs not listed in run.json: {extra}")
+    if not report["problems"]:
+        try:
+            cfg = formats.RunConfig(**run["config"])
+            recomputed = _jsonish(formats.standings(cfg, records))
+            d = _first_difference(_jsonish(run["standings"]), recomputed, "standings")
+            if d:
+                report["problems"].append("standings don't match the match logs: " + d)
+        except Exception as e:
+            report["problems"].append(f"could not recompute standings: {e!r}")
+    report["ok"] = not report["problems"]
+    return report
+
+
+def verify_series_dir(series_dir) -> dict:
+    from arena.series import SERIES_FILE, aggregate
+    series_dir = Path(series_dir)
+    series = json.loads((series_dir / SERIES_FILE).read_text())
+    report = {"ok": False, "kind": "series", "run_dir": str(series_dir), "runs": [],
+              "problems": [], "warnings": []}
+    runs = []
+    for rid in series["run_ids"]:
+        r = verify_run_dir(series_dir / rid)
+        report["runs"].append({"run_id": rid, "ok": r["ok"]})
+        report["problems"].extend(f"{rid}: {p}" for p in r["problems"])
+        report["warnings"].extend(w for w in r["warnings"] if w not in report["warnings"])
+        runs.append(json.loads((series_dir / rid / "run.json").read_text()))
+    if not report["problems"]:
+        d = _first_difference(_jsonish(series["aggregate"]), _jsonish(aggregate(runs)), "aggregate")
+        if d:
+            report["problems"].append("series totals don't match the runs: " + d)
+    report["ok"] = not report["problems"]
+    return report
+
+
+def verify_run(ref) -> dict:
+    """Verify a match, a tournament run, or a series, by directory or id."""
+    from arena import formats
+    from arena.series import SERIES_FILE
+    p = Path(ref).expanduser()
+    if not p.exists():
+        p = DEFAULT_RUNS_DIR / ref
+    if (p / SERIES_FILE).is_file():
+        return verify_series_dir(p)
+    if (p / formats.RUN_FILE).is_file():
+        return verify_run_dir(p)
+    return verify_match_dir(find_run(ref))

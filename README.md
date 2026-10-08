@@ -7,7 +7,7 @@ A toolkit for running No-Limit Texas Hold'em bot competitions.
 
 Forked from [fullhouse-engine](https://github.com/uzlez/fullhouse-engine) (MIT), which provides the poker engine, Docker sandbox, validator and reference bots.
 
-> **Status: early development.** The engine, sandbox, validator, reference bots, `poker match` and `poker verify` work today. Everything under [Roadmap](#roadmap) is planned and being built incrementally.
+> **Status: early development.** The engine, sandbox, validator, reference bots, `poker` command (matches, tournaments, series, bench, verify, export) work today. Roadmap items marked ✅ are done; the rest are being built incrementally.
 
 ---
 
@@ -49,11 +49,12 @@ poker bots                                        # list bots in my_bots/ and bo
 poker match shark aggressor --hands 500           # heads-up, 500 hands at 50/100
 poker match shark aggressor mathematician template --freezeout --blinds turbo -v
 poker match my_bots/mybot shark --stack 20000 --blinds 100/200/25 --seed 7
+poker match my_bots/mybot shark --cash --hands 1000   # every hand starts from the starting stack
 poker verify data/runs/<match-id>                 # replay the log and check it
 ```
 
 - **Bots** are names from `my_bots/` or `bots/`, or paths to a `bot.py`, a bot folder or a `bot.zip`. 2–9 per table.
-- **Fixed mode** (default) plays `--hands` hands. **`--freezeout`** plays until one bot has every chip, with blinds rising by hand count (`--max-hands` caps it).
+- **Fixed mode** (default) plays `--hands` hands with stacks carrying over. **`--cash`** plays `--hands` hands with every hand starting from the starting stack (nobody busts; best for measuring bb/100). **`--freezeout`** plays until one bot has every chip, with blinds rising by hand count (`--max-hands` caps it).
 - **`--blinds`** takes flat blinds `SB/BB[/ANTE]` or a structure: `turbo` (10 hands per level), `standard` (20) or `slow` (40). Structures scale with `--stack`.
 - **Seats are fixed** for the whole match, and the button moves to the next occupied seat each hand.
 - **Results** show each bot's place, final stack, chip delta, bb/100, hands played, think time, timeouts and errors. Add `--json` for machine-readable output.
@@ -63,7 +64,44 @@ poker verify data/runs/<match-id>                 # replay the log and check it
 - **`poker verify`** replays the log through the engine with the recorded seed and decisions, and checks that the cards, chips, awards and places all match. Any edit to the log is caught.
 - **Seeds:** every match has one (generated if you don't pass `--seed`). The same seed and bots replay the same match: same cards, and each bot's `random`/`numpy.random` is seeded from it too.
 
-To run bots in the Docker sandbox (`poker match --docker`, the competition setup), build the image first, and rebuild it whenever `sandbox/runner.py` changes:
+### Tournaments and series
+
+```bash
+poker run configs/bracket.yaml                    # any format from a YAML config (see configs/)
+poker run --format round_robin --bots shark aggressor mathematician ref_bot_2 --workers 4
+poker run configs/mtt.yaml --blinds turbo --seed 3
+poker run configs/bracket.yaml --runs 100 --workers 8   # a series: 100 brackets, aggregated
+poker results <run-id>                            # show standings again
+poker runs                                        # list recent matches, runs and series
+poker verify <run-id>                             # check every match log and the standings
+poker export <run-id> --bot shark                 # zip of results for one participant
+```
+
+| Format | What it plays | Defaults |
+|---|---|---|
+| `table` | One table of 2–9 bots. Heads-up is a table of 2; `duplicate: true` plays heads-up twice with the same cards and seats swapped | fixed, 100 hands, 50/100 |
+| `bracket` | Single-elimination heads-up knockout. Seeding `random` or `given`; byes go to the top seeds. Losers in a round share a place (2nd, 3rd, 5th, ...) | freezeout, `standard` blinds |
+| `round_robin` | Every pair plays heads-up. Points: win 1, draw 0.5; then chips won. Prints a head-to-head table | duplicate cash, 200 hands |
+| `mtt` | Multi-table freezeout: random seating at tables of `table_size`, tables balanced and broken as players bust, down to a final table | freezeout, `standard` blinds, 6 per table |
+
+- **Settings:** `bots`, `names`, `mode` (`fixed`/`cash`/`freezeout`), `hands`, `starting_stack`, `blinds`, `time_limit_ms`, `seed`, `table_size`, `duplicate`, `seeding`, plus `runs`, `workers` and `docker`. Command-line flags override the config file.
+- **Results** live in `data/runs/<run-id>/`: `run.json` holds the standings and every match, and `matches/<match-id>/` holds each match's log.
+- **Series** (`--runs N`) play the same format N times with seeds derived from one series seed, and report each bot's wins, win rate with a 95% confidence interval, top-3 rate, average place, bb/100 and finish distribution.
+- **`poker verify`** on a run or series checks every match log, then recomputes the standings (and series totals) from the logs and compares them with what was saved.
+- **`poker export --bot NAME`** keeps everything public plus that bot's own private data (its hole cards, what it saw, its logs and `debug`). Other bots' hole cards appear only when they were shown down, and their decision details are removed.
+
+### Is my bot improving?
+
+```bash
+poker bench my_bots/mybot                 # vs every reference bot, 500 hands per seat
+poker bench my_bots/mybot --opponents shark aggressor --hands 2000 --workers 4
+```
+
+`poker bench` plays a duplicate cash match against each opponent with **fixed seeds**, so every version of your bot faces exactly the same cards. It reports bb/100 per opponent with a 95% confidence interval, plus the average, and appends the result to `data/bench/<bot>.jsonl` with the bot's code hash, showing how the score changed since the last version. If the confidence intervals overlap, the change may just be noise: add hands.
+
+### Docker sandbox
+
+To run bots in the Docker sandbox (`--docker` on `match`, `run` and `bench`; the competition setup), build the image first, and rebuild it whenever `sandbox/runner.py` changes:
 
 ```bash
 ./sandbox.sh build
@@ -221,27 +259,26 @@ Everything must be drivable by an agent, through the web UI (e.g. Claude in Chro
 
 | Format | Description |
 |---|---|
-| Heads-up | Fixed hands or freezeout. Optional *duplicate* mode replays each deal with seats swapped to cut luck. Best-of-K. |
-| Ring | 2–9 players, fixed hands, scored in bb/100 |
-| Sit & Go | Single-table freezeout with rising blinds |
-| MTT | Multi-table freezeout with table balancing and a final table |
-| Bracket | Single-elimination heads-up, seeded or random, with byes |
-| Round-robin | Every pair plays heads-up; head-to-head matrix |
-| Swiss | Score-grouped tables, no rematches where possible |
-| Series | Any format above, run N times with derived seeds |
-| Stages | Seed one event from another's results, e.g. Swiss → top-8 bracket |
+| ✅ Heads-up | Fixed hands, cash or freezeout. Optional *duplicate* mode replays each deal with seats swapped to cut luck. (Best-of-K: later) |
+| ✅ Ring | 2–9 players, fixed hands or cash, scored in bb/100 |
+| ✅ Sit & Go | Single-table freezeout with rising blinds |
+| ✅ MTT | Multi-table freezeout with table balancing and a final table |
+| ✅ Bracket | Single-elimination heads-up, seeded or random, with byes |
+| ✅ Round-robin | Every pair plays heads-up; head-to-head matrix |
+| Swiss | Score-grouped tables, no rematches where possible (after v1) |
+| ✅ Series | Any format above, run N times with derived seeds |
+| Stages | Seed one event from another's results, e.g. Swiss → top-8 bracket (after v1) |
 
 Blind levels advance by **hand count**, not wall-clock time, so runs are deterministic.
 
 ### Metrics
 
 - **Per match:**
-  - place and chip delta
-  - bb/100 with confidence intervals
-  - VPIP, PFR, 3-bet, aggression factor, WTSD, W$SD
-  - timeouts, errors, think time
-- **Per series:** win rate with Wilson confidence intervals, finish distribution, top-k rate, head-to-head matrix, ratings.
-- **`poker bench <bot>`:** a fixed-seed duplicate gauntlet against the reference bots, tracked per bot version, so you can see whether a bot is actually improving.
+  - ✅ place, chip delta, bb/100, hands played
+  - ✅ timeouts, errors, think time
+  - VPIP, PFR, 3-bet, aggression factor, WTSD, W$SD (after v1)
+- **Per series:** ✅ win rate with Wilson confidence intervals, finish distribution, top-3 rate, average place; ✅ head-to-head matrix (round-robin); ratings (after v1).
+- ✅ **`poker bench <bot>`:** a fixed-seed duplicate gauntlet against the reference bots with 95% CIs, tracked per bot version, so you can see whether a bot is actually improving.
 
 ### Reproducibility
 
@@ -292,7 +329,7 @@ docs/                    bot guide, organizer guide (GitHub Classroom), MCP, CLI
 ### Milestones
 
 1. ✅ **Engine + core:** engine patches, runner protocol v2, seats, tables, event logs, `poker match`, `poker verify`
-2. **Formats + metrics:** all formats, series, stages, stats, `poker run/results/bench`
+2. ✅ **Formats + metrics:** table, bracket, round-robin, MTT, series, stats, `poker run/results/runs/export/bench` (Swiss and stages after v1)
 3. **API + web UI:** launcher, live/replay table, decision inspector, exports
 4. **Remote seats:** human seats, MCP server, decision timers
 5. **Tournament UX:** run dashboards, broadcast mode, bots page
@@ -305,7 +342,8 @@ Upstream leftovers (`demo.py`, `db/schema.sql`, `CONTRIBUTING.md`) will be repla
 ## Repo structure (current)
 
 ```
-arena/          Match runner: seats, tables, blind structures, event logs, verify, `poker` CLI
+arena/          Match runner: seats, tables, blind structures, formats, series, bench, verify, export, `poker` CLI
+configs/        Example run configs for every format
 engine/         Game engine: NLHE rules, hand evaluation, chip tracking
 sandbox/        Bot runner, Docker sandbox, validator, legacy match runner
 bots/           Reference bots and starter template

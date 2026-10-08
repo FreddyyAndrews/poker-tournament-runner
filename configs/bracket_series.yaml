@@ -1,0 +1,8 @@
+# The same heads-up bracket 100 times with different seeds:
+# "across 100 brackets, this bot won X times (95% CI ...)".
+format: bracket
+bots: [shark, aggressor, mathematician, ref_bot_2]
+blinds: turbo
+runs: 100
+workers: 8             # runs played in parallel
+seed: 1
