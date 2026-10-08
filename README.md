@@ -83,7 +83,10 @@ cp -r bots/template bots/mybot
 | `current_bet` | `int` | Highest bet this street |
 | `min_raise_to` | `int` | Minimum legal raise total |
 | `players` | `list` | Public info on all seats |
-| `action_log` | `list` | Every action taken this hand |
+| `action_log` | `list` | Every action taken this hand (including `ante`, `small_blind`, `big_blind` posts) |
+| `hand_num` | `int` | Hand number within the match |
+| `blinds` | `dict` | Current blinds, e.g. `{"sb": 50, "bb": 100, "ante": 0}` (these rise in tournaments) |
+| `button_seat` / `sb_seat` / `bb_seat` | `int` | Seats of the button and blinds; compare with `seat_to_act` for your position |
 
 **Valid return values:**
 

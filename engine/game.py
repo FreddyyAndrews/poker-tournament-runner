@@ -13,6 +13,15 @@ Fixes in v2.0:
   - Chip invariant check after every hand resolution
   - Rich event log for full replay (street_start, blind, action, showdown)
   - Hand strength labels at showdown
+
+Changes in v2.1 (poker-tournament-runner fork):
+  - Blinds and antes are per-engine parameters (small_blind, big_blind, ante);
+    the module constants are only defaults
+  - Never asks a player to act when no decision is possible (e.g. all-in from
+    posting a blind, or the only player left who isn't all-in); the board is
+    run out instead, with street_start events for each dealt street
+  - game_state includes hand_num, blinds, button_seat, sb_seat, bb_seat
+  - Hand result includes starting_stacks, blinds, button_seat
 """
 
 import eval7
@@ -95,9 +104,16 @@ class PokerEngine:
         dealer_seat: int = 0,
         starting_stacks: Optional[dict] = None,
         seed: Optional[int] = None,
+        small_blind: int = SMALL_BLIND,
+        big_blind: int = BIG_BLIND,
+        ante: int = 0,
+        hand_num: int = 0,
     ):
         assert 2 <= len(bot_ids) <= MAX_PLAYERS, \
             f"Need 2-{MAX_PLAYERS} bots, got {len(bot_ids)}"
+        assert 0 < small_blind <= big_blind, \
+            f"Need 0 < small_blind <= big_blind, got {small_blind}/{big_blind}"
+        assert ante >= 0, f"Ante must be >= 0, got {ante}"
 
         stacks = starting_stacks or {}
         self.players = [
@@ -107,7 +123,11 @@ class PokerEngine:
         self.n           = len(self.players)
         self.dealer_seat = dealer_seat % self.n
         self.hand_id     = hand_id
+        self.hand_num    = hand_num
         self.seed        = seed
+        self.small_blind = small_blind
+        self.big_blind   = big_blind
+        self.ante        = ante
 
         self.pot             = 0
         self.community_cards = []          # list of eval7.Card
@@ -115,10 +135,10 @@ class PokerEngine:
         self.action_log      = []          # flat dicts (backwards-compat for bots)
         self.events          = []          # rich event log for replay
         self.current_bet     = 0
-        self.min_raise       = BIG_BLIND
+        self.min_raise       = big_blind
 
         # Short all-in: only reopen action if raise >= last full raise size
-        self._last_aggression_size = BIG_BLIND
+        self._last_aggression_size = big_blind
 
         self._needs_to_act    = set()
         self._deck_cards      = []         # list[eval7.Card] after shuffle
@@ -132,6 +152,7 @@ class PokerEngine:
     def start_hand(self) -> dict:
         self._snapshot_stacks()
         self._build_deck()
+        self._post_antes()
         self._post_blinds()
         self._deal_hole_cards()
 
@@ -139,6 +160,11 @@ class PokerEngine:
         self._needs_to_act = {p.seat for p in self.players if p.is_active}
 
         self._emit("street_start", {"street": "preflop", "community_cards": []})
+
+        # Blinds/antes can put players all-in. If at most one player can still
+        # act and they owe nothing, there is no decision left: run the board out.
+        if self._betting_is_closed():
+            return self._run_it_out()
         return self._build_state(self._utg_seat())
 
     def apply_action(self, seat: int, raw: dict) -> dict:
@@ -209,11 +235,13 @@ class PokerEngine:
     def _utg_seat(self) -> int:
         """
         Preflop first actor.
-        Heads-up: SB (dealer) acts first.
+        Heads-up: SB (dealer) acts first, unless the blind put them all-in.
         Normal:   first active seat after BB.
+        Only called when at least one player can still act.
         """
         if self._is_heads_up:
-            return self._sb_seat()
+            sb = self._sb_seat()
+            return sb if self.players[sb].is_active else self._bb_seat()
         bb = self._bb_seat()
         for offset in range(1, self.n + 1):
             s = (bb + offset) % self.n
@@ -265,17 +293,31 @@ class PokerEngine:
         return None
 
     def _advance_if_street_over(self, last_seat: int) -> dict:
+        if self._betting_is_closed():
+            return self._advance_street()
         nxt = self._next_actor(last_seat)
         if nxt is not None:
             return self._build_state(nxt)
         return self._advance_street()
 
+    def _betting_is_closed(self) -> bool:
+        """True when no decision is left this street: fewer than two players
+        can act, and any player who can act already matches the current bet."""
+        active = [p for p in self.players if p.is_active]
+        if len(active) >= 2:
+            return False
+        return all(p.bet_this_street >= self.current_bet for p in active)
+
     def _advance_street(self) -> dict:
         for p in self.players:
             p.bet_this_street = 0
         self.current_bet           = 0
-        self.min_raise             = BIG_BLIND
-        self._last_aggression_size = BIG_BLIND
+        self.min_raise             = self.big_blind
+        self._last_aggression_size = self.big_blind
+
+        # Everyone but (at most) one player is all-in: nobody left to bet against.
+        if self._betting_is_closed() and self.street != "river":
+            return self._run_it_out()
 
         if self.street == "preflop":
             self.community_cards += self._deal(3)
@@ -302,16 +344,20 @@ class PokerEngine:
         return self._build_state(first)
 
     def _run_it_out(self) -> dict:
-        """All remaining players are all-in — run out the board silently."""
-        if self.street == "preflop":
-            self.community_cards += self._deal(3)
-            self.street = "flop"
-        if self.street == "flop":
-            self.community_cards += self._deal(1)
-            self.street = "turn"
-        if self.street == "turn":
-            self.community_cards += self._deal(1)
-            self.street = "river"
+        """No more betting is possible — deal the rest of the board and show down.
+        Each dealt street still emits street_start so replays can show the run-out."""
+        for street, n_cards in (("flop", 3), ("turn", 1), ("river", 1)):
+            if len(self.community_cards) >= {"flop": 3, "turn": 4, "river": 5}[street]:
+                continue
+            for p in self.players:
+                p.bet_this_street = 0
+            self.current_bet = 0
+            self.community_cards += self._deal(n_cards)
+            self.street = street
+            self._emit("street_start", {
+                "street":          self.street,
+                "community_cards": [str(c) for c in self.community_cards],
+            })
         return self._showdown()
 
     # -----------------------------------------------------------------------
@@ -321,15 +367,31 @@ class PokerEngine:
     def _snapshot_stacks(self):
         self._starting_stacks = {p.bot_id: p.stack for p in self.players}
 
+    def _post_antes(self):
+        """Every player posts the ante as dead money: it goes in the pot (and
+        counts for side pots) but not toward calling the current bet."""
+        if self.ante <= 0:
+            return
+        for p in self.players:
+            amount = min(self.ante, p.stack)
+            p.stack          -= amount
+            p.total_invested += amount
+            self.pot         += amount
+            if p.stack == 0:
+                p.is_all_in = True
+            self.action_log.append({"seat": p.seat, "action": "ante", "amount": amount})
+            self._emit("blind", {"seat": p.seat, "bot_id": p.bot_id,
+                                 "action": "ante", "amount": amount})
+
     def _post_blinds(self):
         sb, bb       = self._sb_seat(), self._bb_seat()
-        sb_amount    = min(SMALL_BLIND, self.players[sb].stack)
-        bb_amount    = min(BIG_BLIND,   self.players[bb].stack)
+        sb_amount    = min(self.small_blind, self.players[sb].stack)
+        bb_amount    = min(self.big_blind,   self.players[bb].stack)
         self._put_in(sb, sb_amount)
         self._put_in(bb, bb_amount)
         self.current_bet           = max(self.current_bet, bb_amount)
-        self.min_raise             = BIG_BLIND
-        self._last_aggression_size = BIG_BLIND
+        self.min_raise             = self.big_blind
+        self._last_aggression_size = self.big_blind
         if self.players[sb].stack == 0:
             self.players[sb].is_all_in = True
         if self.players[bb].stack == 0:
@@ -571,7 +633,15 @@ class PokerEngine:
             "your_bet_this_street":  p.bet_this_street,
             "players":               [pl.to_public_dict() for pl in self.players],
             "action_log":            list(self.action_log),
+            "hand_num":              self.hand_num,
+            "blinds":                self._blinds_dict(),
+            "button_seat":           self.dealer_seat,
+            "sb_seat":               self._sb_seat(),
+            "bb_seat":               self._bb_seat(),
         }
+
+    def _blinds_dict(self) -> dict:
+        return {"sb": self.small_blind, "bb": self.big_blind, "ante": self.ante}
 
     def _build_result(
         self,
@@ -593,4 +663,7 @@ class PokerEngine:
             "action_log":      list(self.action_log),
             "events":          list(self.events),
             "final_stacks":    {p.bot_id: p.stack for p in self.players},
+            "starting_stacks": dict(self._starting_stacks),
+            "blinds":          self._blinds_dict(),
+            "button_seat":     self.dealer_seat,
         }
