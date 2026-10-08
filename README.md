@@ -49,7 +49,15 @@ python3 demo.py     # live demo at http://localhost:5001
 Run a single match from the terminal:
 
 ```bash
-python3 sandbox/match.py bots/mybot/bot.py bots/shark/bot.py --hands 400 [--seed 7] [--json]
+python3 sandbox/match.py bots/mybot/bot.py bots/shark/bot.py --hands 400 [--seed 7] [--time-limit-ms 2000] [--docker] [--json]
+```
+
+Every match has a seed (printed if you didn't pass one). The same seed and bots replay the same match: same cards, and each bot's `random`/`numpy.random` is seeded from it too. The summary shows each bot's decision count, think time, timeouts and errors.
+
+To run bots in the Docker sandbox (`--docker`, the competition setup), build the image first, and rebuild it whenever `sandbox/runner.py` changes:
+
+```bash
+./sandbox.sh build
 ```
 
 Validate a bot before submitting it:
@@ -89,6 +97,7 @@ cp -r bots/template bots/mybot
 | `hand_num` | `int` | Hand number within the match |
 | `blinds` | `dict` | Current blinds, e.g. `{"sb": 50, "bb": 100, "ante": 0}` (these rise in tournaments) |
 | `button_seat` / `sb_seat` / `bb_seat` | `int` | Seats of the button and blinds; compare with `seat_to_act` for your position |
+| `time_limit_ms` | `int` | Your deadline for this decision |
 
 > **Seats vs. names:** seat numbers are positions at the table *for this hand*. When a player busts, the table is reseated and seat numbers shift. To track an opponent across hands, use `bot_id` (in `players`, `action_log` and `match_action_log`), not `seat`.
 
@@ -103,6 +112,17 @@ cp -r bots/template bots/mybot
 ```
 
 Invalid or missing actions count as a fold. Raises below the minimum are snapped up automatically.
+
+**Debugging your bot:**
+- Anything you `print()` inside `decide()` (stdout or stderr) is captured and saved with that decision as its logs, up to 8 KB per decision. Prints at import time are saved with the bot's load logs.
+- You can add an optional `"debug"` value to the action you return, and it is recorded alongside the decision. It must be JSON-serialisable (up to 16 KB). For example:
+  ```python
+  return {"action": "raise", "amount": 600, "debug": {"equity": 0.71, "reason": "value bet"}}
+  ```
+- Think time is measured for every decision.
+- Before hand 1 your bot gets one `{"type": "warmup"}` call with a long deadline for any lazy loading. Return anything (or ignore it); errors here are harmless.
+
+**Randomness:** use the `random` module or `numpy.random`. They are seeded per match, so a seeded match is reproducible. Your own unseeded generators (`random.Random()`, `os.urandom`, time-based seeds) make your bot's matches impossible to replay.
 
 **Rules and limits:**
 - 2 seconds to return an action, or your bot folds
@@ -177,14 +197,15 @@ Everything must be drivable by an agent, through the web UI (e.g. Claude in Chro
 
 ### Engine changes
 
-- **Blinds and stacks:** configurable small blind, big blind, antes and starting stacks, with rising blind levels in tournament formats.
-- **All-in blind fix:** a player who is all-in after posting a blind is never asked to act.
-- **Richer `game_state`:** blinds, button/SB/BB seats, hand number, time limit, and tournament context (level, players left). New fields are added only, so existing bots keep working.
-- **Runner protocol v2:**
+- ✅ **Blinds and stacks:** configurable small blind, big blind and antes in the engine. Starting stacks and rising blind levels across a match come with the table/format work.
+- ✅ **All-in blind fix:** a player who is all-in after posting a blind is never asked to act.
+- ✅ **Richer `game_state`:** blinds, button/SB/BB seats, hand number, time limit, and `bot_id` everywhere. Tournament context (level, players left) is still to come. New fields are added only, so existing bots keep working.
+- ✅ **Runner protocol v2:**
   - `print()` output inside `decide()` is captured per decision as the bot's logs, instead of corrupting the protocol.
   - Bots may return an optional `debug` dict.
   - Think time is measured for every decision.
-- **Host hardening:** host-side timeouts, recovery when a bot process stalls, stderr capture, and parallel warmup.
+- ✅ **Host hardening:** host-side timeouts, recovery when a bot process stalls or dies, stderr capture, and parallel warmup.
+- ✅ **Reproducible bots:** each bot's RNG is seeded from the match seed.
 - **Seat interface:** bots, humans and MCP clients share one seat interface, with decision times configurable per seat type (e.g. bot 2 s, human 30 s, LLM 120 s).
 
 ### Formats

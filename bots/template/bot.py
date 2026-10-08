@@ -94,6 +94,10 @@ def decide(game_state: dict) -> dict:
       seat, bot_id, stack, state, is_folded, is_all_in, bet_this_street, hole_cards
       `state` is a string: "active" | "folded" | "all_in" | "busted"
       `hole_cards` is always None for opponents (only revealed at showdown)
+
+    Debugging: anything you print() here is saved with this decision as its
+    logs, and you can add a JSON-serialisable "debug" value to the dict you
+    return, e.g. {"action": "call", "debug": {"equity": 0.4}}.
     """
 
     # ── Your strategy goes here ───────────────────────────────────────────────
