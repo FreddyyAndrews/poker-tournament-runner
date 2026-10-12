@@ -108,7 +108,7 @@ poker bench my_bots/mybot --opponents shark aggressor --hands 2000 --workers 4
 ```bash
 make web                                  # build the UI once (needs Node 18+)
 poker serve --open                        # http://127.0.0.1:8765  (API docs at /docs)
-poker match shark aggressor --pace 600    # then watch it from the Recent list
+poker match shark aggressor --pace 600    # runs on the server; open the watch link it prints
 ```
 
 **New** starts anything from a form: pick a format (table, bracket, round robin, multi-table), add players, choose how each match is played (freezeout, fixed hands or cash), the stack and blinds (presets with a level preview, or flat), and whether to watch it live (Live, Slow, Quick or Instant pace) or play it many times as a series. A summary shows exactly what will run and roughly how long a paced run takes. A single table opens straight into the live view; a tournament opens its run page, where **Now playing** links to the match being played.
@@ -130,9 +130,11 @@ poker match shark aggressor --pace 600    # then watch it from the Recent list
 
 For UI development run `poker serve` and `cd web && npm run dev` (Vite on port 5173, proxying `/api`). `make web-test` runs the Playwright end-to-end tests, and `node web/scripts/screenshot.mjs <url> <out.png>` takes a screenshot of any page.
 
-`poker serve` runs the API and the UI on this machine only. Matches, tournaments and series started through it run as background jobs through the same code as the CLI, so their results land in `data/runs/` and work with `verify`, `results` and `export`.
+`poker serve` runs the API and the UI on this machine only, and it is the one place matches run: whether started from the UI, the API, an MCP client or the CLI (`poker match`, `poker run`), each runs as a background job on the server. Results land in its runs directory (`data/runs/` by default) and work with `verify`, `results` and `export`.
 
-- **Realtime:** a match started from the UI plays at a watchable pace (`pace_ms`, default 600 ms per action; deals and showdowns pause longer). A bot's think time counts toward the pause, so pacing never cuts into a bot's time limit. Series always run at full speed.
+- **Live means running on the server right now.** Everything else shows how it ended: Complete, Stopped (cancelled), Error, or Didn't finish (no final result, e.g. the server stopped before it could save one). Matches run with `--local` play in the CLI's own process and are never shown as live.
+- **Realtime:** a match started from the UI plays at a watchable pace (`pace_ms`, default 600 ms per action; deals and showdowns pause longer); from the CLI, add `--pace 600`. A bot's think time counts toward the pause, so pacing never cuts into a bot's time limit. Series always run at full speed.
+- **Stopping the server** (Ctrl+C) cancels running jobs and waits for them to save their results, so nothing is left half-written; they show as Stopped. Ctrl+C on `poker match` / `poker run` cancels that one job.
 - **Live stream:** `GET /api/matches/<key>/stream?from=N` streams a match's events (server-sent events) from event N as they're written. Join late and you catch up first; replays of finished matches use the same stream.
 - **Jobs:** `POST /api/matches`, `POST /api/runs` (any format, `runs` > 1 for a series), `GET /api/jobs`, `POST /api/jobs/<id>/cancel`.
 - **Results:** `GET /api/runs`, `/api/runs/<id>`, `/api/matches/<key>`, `/api/matches/<key>/events`, `/api/verify/<id>`, `/api/export/<id>?bot=NAME`.
