@@ -109,7 +109,7 @@ class Opp:
                 folds += f
                 faced += n
         rate = (2 * 0.4 + folds) / (2 + faced)
-        return max(0.0, min(1.0, rate / 0.3))
+        return max(0.0, min(1.0, rate / 0.12))
 
     def pre_range(self, k):
         """Fraction of hands behind a preflop raise in size bucket k (bigger = tighter)."""
