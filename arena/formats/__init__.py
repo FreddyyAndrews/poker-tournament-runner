@@ -28,6 +28,7 @@ import yaml
 from arena import bots as botlib
 from arena import structures
 from arena.events import DEFAULT_RUNS_DIR
+from arena.pacing import Cancelled
 from arena.seeds import derive_seed, new_seed
 from arena.table import MODES, MatchConfig, run_match
 
@@ -118,6 +119,8 @@ class RunContext:
     workers: int = 1
     use_docker: bool = None
     progress: list = field(default_factory=list)   # callables(dict) for status updates
+    pace_ms: int = 0                                 # slow matches down for live viewing
+    cancel: object = None                            # threading.Event: stop the run
     _matches: int = 0
 
     def match_seed(self, *key) -> int:
@@ -125,8 +128,11 @@ class RunContext:
 
     def play(self, specs, match_cfg: MatchConfig, match_id: str) -> dict:
         """Play one match inside this run; returns its summary."""
+        for fn in self.progress:
+            fn({"event": "match_start", "match_id": match_id})
         summary = run_match(specs, match_cfg, match_id=match_id,
-                            runs_dir=self.run_dir / "matches", use_docker=self.use_docker)
+                            runs_dir=self.run_dir / "matches", use_docker=self.use_docker,
+                            pace_ms=self.pace_ms, cancel=self.cancel)
         self._matches += 1
         for fn in self.progress:
             fn({"event": "match_done", "match_id": match_id, "matches_done": self._matches})
@@ -156,14 +162,16 @@ def match_record(summary: dict, **extra) -> dict:
 
 
 def run(cfg: RunConfig, run_id: str = None, runs_dir: Path = DEFAULT_RUNS_DIR,
-        workers: int = 1, use_docker: bool = None, progress=()) -> dict:
+        workers: int = 1, use_docker: bool = None, progress=(), pace_ms: int = 0,
+        cancel=None) -> dict:
     """Play one run of `cfg` and save run.json. Returns the run result."""
     seed = cfg.seed if cfg.seed is not None else new_seed()
     cfg.seed = seed
     specs = botlib.resolve_all(cfg.bots, names=cfg.names)
     run_id = run_id or f"{cfg.format}_{time.strftime('%Y%m%d_%H%M%S')}_{seed % 10**6:06d}"
     ctx = RunContext(run_id=run_id, run_dir=Path(runs_dir) / run_id, seed=seed, specs=specs,
-                     workers=max(1, workers), use_docker=use_docker, progress=list(progress))
+                     workers=max(1, workers), use_docker=use_docker, progress=list(progress),
+                     pace_ms=pace_ms or 0, cancel=cancel)
     module = _module(cfg.format)
     t0 = time.time()
     base = {"kind": "run", "run_id": run_id, "format": cfg.format, "name": cfg.name,
@@ -172,6 +180,9 @@ def run(cfg: RunConfig, run_id: str = None, runs_dir: Path = DEFAULT_RUNS_DIR,
     ctx.save({**base, "status": "running"})
     try:
         result = module.play(cfg, ctx)
+    except Cancelled:
+        ctx.save({**base, "status": "cancelled", "duration_s": round(time.time() - t0, 2)})
+        raise
     except BaseException as e:
         ctx.save({**base, "status": "error", "error": repr(e),
                   "duration_s": round(time.time() - t0, 2)})

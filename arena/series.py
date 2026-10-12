@@ -57,7 +57,7 @@ def aggregate(runs: list) -> list:
 
 def run_series(cfg: formats.RunConfig, runs: int, series_id: str = None,
                runs_dir: Path = DEFAULT_RUNS_DIR, workers: int = 1, use_docker: bool = None,
-               progress=()) -> dict:
+               progress=(), cancel=None) -> dict:
     if runs < 1:
         raise ValueError("runs must be >= 1")
     seed = cfg.seed if cfg.seed is not None else new_seed()
@@ -71,7 +71,7 @@ def run_series(cfg: formats.RunConfig, runs: int, series_id: str = None,
     def one(i):
         run_cfg = replace(cfg, seed=derive_seed(seed, "run", i))
         result = formats.run(run_cfg, run_id=f"run_{i + 1:03d}", runs_dir=series_dir,
-                             workers=1, use_docker=use_docker)
+                             workers=1, use_docker=use_docker, cancel=cancel)
         done.append(i)
         for fn in progress:
             fn({"event": "run_done", "run": i + 1, "runs_done": len(done), "runs": runs,

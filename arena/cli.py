@@ -52,7 +52,7 @@ def cmd_match(args):
     live = _live_printer() if args.verbose and not args.json else None
     summary = run_match(specs, config, match_id=args.id, runs_dir=Path(args.out),
                         use_docker=True if args.docker else None,
-                        listeners=[live] if live else [])
+                        listeners=[live] if live else [], pace_ms=args.pace)
     if args.json:
         _print_json(summary)
     else:
@@ -131,9 +131,10 @@ def cmd_run(args):
                                 workers=workers, use_docker=use_docker, progress=[progress])
         else:
             def progress(p):
-                _say(args, f"  {p['match_id']} done ({p['matches_done']} matches)")
+                if p["event"] == "match_done":
+                    _say(args, f"  {p['match_id']} done ({p['matches_done']} matches)")
             result = formats.run(cfg, run_id=args.id, runs_dir=Path(args.out), workers=workers,
-                                 use_docker=use_docker, progress=[progress])
+                                 use_docker=use_docker, progress=[progress], pace_ms=args.pace)
     except ValueError as e:
         _fail(str(e), args.json)
     if args.json:
@@ -346,6 +347,19 @@ def cmd_bench(args):
         print(f"  change vs last: {diff:+.1f} bb/100")
 
 
+def cmd_serve(args):
+    import uvicorn
+    from arena.server import create_app
+    url = f"http://127.0.0.1:{args.port}"
+    print(f"Poker runner on {url}  (API docs: {url}/docs; Ctrl+C to stop)", file=sys.stderr)
+    if args.open:
+        import threading
+        import webbrowser
+        threading.Timer(1.0, lambda: webbrowser.open(url)).start()
+    # Only ever on this machine: bind to localhost.
+    uvicorn.run(create_app(Path(args.out)), host="127.0.0.1", port=args.port, log_level="warning")
+
+
 def cmd_bots(args):
     found = botlib.available()
     if args.json:
@@ -363,6 +377,9 @@ def _add_common_match_flags(p, run=False):
     p.add_argument("--stack", type=int, default=None if run else 10_000,
                    help="starting stack (default 10000)")
     p.add_argument("--docker", action="store_true", help="run bots in the Docker sandbox")
+    p.add_argument("--pace", type=int, default=0, metavar="MS",
+                   help="slow play down for watching: about MS milliseconds per action "
+                        "(default 0 = full speed; ignored for series)")
     p.add_argument("--id", help="folder name for the results (default: generated)")
     p.add_argument("--out", default=str(DEFAULT_RUNS_DIR), help="results directory (default data/runs)")
     p.add_argument("--json", action="store_true", help="print the result as JSON")
@@ -441,6 +458,12 @@ def build_parser():
     bn.add_argument("--docker", action="store_true")
     bn.add_argument("--json", action="store_true")
     bn.set_defaults(func=cmd_bench)
+
+    sv = sub.add_parser("serve", help="start the web UI and API on this machine")
+    sv.add_argument("--port", type=int, default=8765)
+    sv.add_argument("--out", default=str(DEFAULT_RUNS_DIR), help="results directory (default data/runs)")
+    sv.add_argument("--open", action="store_true", help="open the UI in a browser")
+    sv.set_defaults(func=cmd_serve)
 
     b = sub.add_parser("bots", help="list available bots")
     b.add_argument("--json", action="store_true")

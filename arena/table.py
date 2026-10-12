@@ -22,6 +22,7 @@ from pathlib import Path
 import arena
 from arena import structures
 from arena.events import DEFAULT_RUNS_DIR, EventLog
+from arena.pacing import Cancelled, Pacer
 from arena.seats import BotSeat
 from arena.seeds import derive_seed, new_seed
 from engine.game import PokerEngine
@@ -84,7 +85,7 @@ def rank(names, key) -> dict:
 
 class Table:
     def __init__(self, slots, stacks, structure, seed, log, match_id,
-                 table_id=None, reset_stack=None):
+                 table_id=None, reset_stack=None, pacer=None):
         """slots: list of Seat or None (empty seat); index = table seat number.
         reset_stack: if set (cash mode), every hand starts from this stack."""
         self.slots       = list(slots)
@@ -95,6 +96,7 @@ class Table:
         self.match_id    = match_id
         self.table_id    = table_id
         self.reset_stack = reset_stack
+        self.pacer       = pacer          # called after every event (pacing / cancel)
         self.button      = None
         self.level_idx   = None
         self.hands_played = 0
@@ -141,7 +143,10 @@ class Table:
     def _emit(self, event_type, **data):
         if self.table_id is not None:
             data = {"table": self.table_id, **data}
-        return self.log.emit(event_type, **data)
+        event = self.log.emit(event_type, **data)
+        if self.pacer is not None:
+            self.pacer(event)
+        return event
 
     def _move_button(self):
         n = len(self.slots)
@@ -304,14 +309,14 @@ def bot_result(seat, place, final_stack, starting_stack, hands, bb_sum, busted_o
     }
 
 
-def play_match(seats, config: MatchConfig, match_id: str, log) -> dict:
+def play_match(seats, config: MatchConfig, match_id: str, log, pacer=None) -> dict:
     """Play a single-table match with already-built seats, emitting events to
     `log`. Returns {"results", "hands", "stopped"}. Used by run_match and by
     verify (which replays with recorded decisions instead of live bots)."""
     cash = config.mode == "cash"
     table = Table(seats, {s.name: config.starting_stack for s in seats},
                   config.structure, config.seed, log, match_id,
-                  reset_stack=config.starting_stack if cash else None)
+                  reset_stack=config.starting_stack if cash else None, pacer=pacer)
     bankroll = {s.name: config.starting_stack for s in seats}   # cash mode running total
     places, busted_on = {}, {}
     hands_dealt = {s.name: 0 for s in seats}
@@ -344,8 +349,11 @@ def play_match(seats, config: MatchConfig, match_id: str, log) -> dict:
                 for name in sorted(ranked, key=lambda n: (-ranked[n], seat_of[n])):
                     places[name] = remaining + ranked[name]
                     busted_on[name] = hand_num
-                    log.emit("elimination", hand=hand_num, bot=name, place=places[name])
+                    table._emit("elimination", hand=hand_num, bot=name, place=places[name])
             hand_num += 1
+    except Cancelled:
+        stopped = "cancelled"
+        raise
     except BaseException as e:
         stopped = "error: " + repr(e)
         raise
@@ -378,7 +386,7 @@ def diagnostics(seats) -> dict:
 
 def run_match(bot_specs, config: MatchConfig, match_id: str = None,
               runs_dir: Path = DEFAULT_RUNS_DIR, use_docker: bool = None,
-              listeners=()) -> dict:
+              listeners=(), pace_ms: int = 0, cancel=None) -> dict:
     """Play a match between 2-9 bots and write its event log + summary.
     Returns the summary dict (also saved as summary.json in the run dir)."""
     if not 2 <= len(bot_specs) <= 9:
@@ -393,16 +401,20 @@ def run_match(bot_specs, config: MatchConfig, match_id: str = None,
     t0 = time.time()
     with EventLog(run_dir) as log:
         log.listeners.extend(listeners)
-        outcome = None
+        outcome, interrupted = None, "error"
         try:
-            outcome = play_match(seats, config, match_id, log)
+            outcome = play_match(seats, config, match_id, log,
+                                 pacer=Pacer(pace_ms, cancel) if (pace_ms or cancel) else None)
+        except Cancelled:
+            interrupted = "cancelled"
+            raise
         finally:
             summary = {
                 "kind": "match", "match_id": match_id, "seed": seed, "config": config.to_dict(),
                 "seats": [s.info() for s in seats],
                 "results": outcome["results"] if outcome else None,
                 "hands": outcome["hands"] if outcome else None,
-                "stopped": outcome["stopped"] if outcome else "error",
+                "stopped": outcome["stopped"] if outcome else interrupted,
                 "duration_s": round(time.time() - t0, 2), "run_dir": str(run_dir),
                 "bot_diagnostics": diagnostics(seats),
             }

@@ -26,6 +26,7 @@ from concurrent.futures import ThreadPoolExecutor
 import arena
 from arena.events import EventLog
 from arena.formats import match_record
+from arena.pacing import Cancelled, Pacer
 from arena.seeds import derive_seed
 from arena.table import (Table, bot_result, diagnostics, engine_hash, make_bot_seats,
                          rank, warm_up)
@@ -54,7 +55,8 @@ def _flush(tables, log):
         buf.events.clear()
 
 
-def play_mtt(seats, match_cfg, table_size: int, match_id: str, log, workers: int = 1) -> dict:
+def play_mtt(seats, match_cfg, table_size: int, match_id: str, log, workers: int = 1,
+             pacer=None) -> dict:
     """Play a multi-table freezeout with already-built seats. Returns
     {"results", "hands", "stopped"} like play_match."""
     seed = match_cfg.seed
@@ -70,7 +72,7 @@ def play_mtt(seats, match_cfg, table_size: int, match_id: str, log, workers: int
         slots[tid][k // n_tables] = s
     tables = {tid: Table(sl, {s.name: match_cfg.starting_stack for s in sl if s},
                          match_cfg.structure, derive_seed(seed, "table", tid), _Buffer(),
-                         f"{match_id}_t{tid}", table_id=tid)
+                         f"{match_id}_t{tid}", table_id=tid, pacer=pacer)
               for tid, sl in slots.items()}
     by_name = {s.name: s for s in seats}
     final_stack = {}                              # busted players: 0
@@ -133,6 +135,9 @@ def play_mtt(seats, match_cfg, table_size: int, match_id: str, log, workers: int
                 tick += 1
         finally:
             pool.shutdown(wait=True)
+    except Cancelled:
+        stopped = "cancelled"
+        raise
     except BaseException as e:
         stopped = "error: " + repr(e)
         raise
@@ -198,9 +203,15 @@ def play(cfg, ctx) -> dict:
     run_dir = ctx.run_dir / "matches" / MATCH_ID
     t0 = time.time()
     with EventLog(run_dir) as log:
-        outcome = None
+        outcome, interrupted = None, "error"
         try:
-            outcome = play_mtt(seats, match_cfg, cfg.table_size, MATCH_ID, log, workers=ctx.workers)
+            pacer = Pacer(ctx.pace_ms, ctx.cancel) if (ctx.pace_ms or ctx.cancel) else None
+            outcome = play_mtt(seats, match_cfg, cfg.table_size, MATCH_ID, log,
+                               workers=max(ctx.workers, len(seats)) if ctx.pace_ms else ctx.workers,
+                               pacer=pacer)
+        except Cancelled:
+            interrupted = "cancelled"
+            raise
         finally:
             summary = {
                 "kind": "match", "match_id": MATCH_ID, "seed": match_cfg.seed,
@@ -208,7 +219,7 @@ def play(cfg, ctx) -> dict:
                 "seats": [s.info() for s in seats],
                 "results": outcome["results"] if outcome else None,
                 "hands": outcome["hands"] if outcome else None,
-                "stopped": outcome["stopped"] if outcome else "error",
+                "stopped": outcome["stopped"] if outcome else interrupted,
                 "duration_s": round(time.time() - t0, 2), "run_dir": str(run_dir),
                 "bot_diagnostics": diagnostics(seats),
             }

@@ -99,6 +99,20 @@ poker bench my_bots/mybot --opponents shark aggressor --hands 2000 --workers 4
 
 `poker bench` plays a duplicate cash match against each opponent with **fixed seeds**, so every version of your bot faces exactly the same cards. It reports bb/100 per opponent with a 95% confidence interval, plus the average, and appends the result to `data/bench/<bot>.jsonl` with the bot's code hash, showing how the score changed since the last version. If the confidence intervals overlap, the change may just be noise: add hands.
 
+### Server and live viewing
+
+```bash
+poker serve                               # http://127.0.0.1:8765  (API docs at /docs)
+poker match shark aggressor --pace 600    # CLI matches can be paced and watched too
+```
+
+`poker serve` runs the API (and, once it's built, the web UI) on this machine only. Matches, tournaments and series started through it run as background jobs through the same code as the CLI, so their results land in `data/runs/` and work with `verify`, `results` and `export`.
+
+- **Realtime:** a match started from the UI plays at a watchable pace (`pace_ms`, default 600 ms per action; deals and showdowns pause longer). A bot's think time counts toward the pause, so pacing never cuts into a bot's time limit. Series always run at full speed.
+- **Live stream:** `GET /api/matches/<key>/stream?from=N` streams a match's events (server-sent events) from event N as they're written. Join late and you catch up first; replays of finished matches use the same stream.
+- **Jobs:** `POST /api/matches`, `POST /api/runs` (any format, `runs` > 1 for a series), `GET /api/jobs`, `POST /api/jobs/<id>/cancel`.
+- **Results:** `GET /api/runs`, `/api/runs/<id>`, `/api/matches/<key>`, `/api/matches/<key>/events`, `/api/verify/<id>`, `/api/export/<id>?bot=NAME`.
+
 ### Docker sandbox
 
 To run bots in the Docker sandbox (`--docker` on `match`, `run` and `bench`; the competition setup), build the image first, and rebuild it whenever `sandbox/runner.py` changes:
@@ -330,7 +344,7 @@ docs/                    bot guide, organizer guide (GitHub Classroom), MCP, CLI
 
 1. ✅ **Engine + core:** engine patches, runner protocol v2, seats, tables, event logs, `poker match`, `poker verify`
 2. ✅ **Formats + metrics:** table, bracket, round-robin, MTT, series, stats, `poker run/results/runs/export/bench` (Swiss and stages after v1)
-3. **API + web UI:** launcher, live/replay table, decision inspector, exports
+3. **API + web UI:** ✅ server (jobs, pacing, live event streams); launcher, live/replay table, decision inspector, exports
 4. **Remote seats:** human seats, MCP server, decision timers
 5. **Tournament UX:** run dashboards, broadcast mode, bots page
 6. **Lab + docs:** Bot Lab, GitHub Classroom import, Docker validation, docs, end-to-end tests
@@ -343,6 +357,7 @@ Upstream leftovers (`demo.py`, `db/schema.sql`, `CONTRIBUTING.md`) will be repla
 
 ```
 arena/          Match runner: seats, tables, blind structures, formats, series, bench, verify, export, `poker` CLI
+arena/server/   HTTP API, background jobs, live event streams (`poker serve`)
 configs/        Example run configs for every format
 engine/         Game engine: NLHE rules, hand evaluation, chip tracking
 sandbox/        Bot runner, Docker sandbox, validator, legacy match runner
