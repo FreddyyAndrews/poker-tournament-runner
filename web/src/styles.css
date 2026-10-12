@@ -305,7 +305,8 @@ label.check input { accent-color: var(--text); }
 .chip .x { border: 0; background: transparent; padding: 0 6px; color: var(--muted); font-size: 16px; line-height: 1; }
 .chip .x:hover { color: var(--text); background: transparent; }
 .bot-list { border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
-.bot-row { display: grid; grid-template-columns: 1fr 90px 90px auto; align-items: center; gap: 12px; padding: 8px 12px; }
+.bot-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 150px) 72px auto; align-items: center; gap: 12px; padding: 8px 12px; }
+.bot-row .clip { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bot-row + .bot-row { border-top: 1px solid var(--line); }
 button.small { padding: 4px 10px; font-size: 12px; }
 button.primary { background: var(--text); color: var(--bg); border-color: var(--text); font-weight: 600; padding: 10px; }

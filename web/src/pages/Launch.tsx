@@ -3,6 +3,11 @@ import { playerColor } from '../components/PokerTable'
 import { rememberSeat, seatHash } from '../seatMemory'
 import type { Level } from '../types'
 
+// Where a bot lives: "bots/", "my_bots/", or another worktree's branch.
+const folderLabel = (f: string) => f.startsWith('worktree:') ? f.slice(9) : f + '/'
+const folderTitle = (f: string) => f.startsWith('worktree:') ? `my_bots/ in the git worktree on branch ${f.slice(9)}` : f + '/'
+
+
 type Format = 'table' | 'bracket' | 'round_robin' | 'mtt'
 type Mode = 'fixed' | 'cash' | 'freezeout'
 type BotInfo = { name: string; folder: string; path: string; hash: string }
@@ -214,7 +219,7 @@ export function Launch() {
               {bots.map(b => (
                 <div key={b.path} className="bot-row">
                   <span>{b.name}</span>
-                  <span className="muted mono">{b.folder}/</span>
+                  <span className="muted mono clip" title={folderTitle(b.folder)}>{folderLabel(b.folder)}</span>
                   <span className="muted mono" title="code version">{b.hash.slice(0, 8)}</span>
                   <button className="small" onClick={() => add(b.name)} data-testid={`add-${b.name}`}>Add</button>
                 </div>
