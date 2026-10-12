@@ -7,7 +7,14 @@ A toolkit for running No-Limit Texas Hold'em bot competitions.
 
 Forked from [fullhouse-engine](https://github.com/uzlez/fullhouse-engine) (MIT), which provides the poker engine, Docker sandbox, validator and reference bots.
 
-> **Status: early development.** The engine, sandbox, validator, reference bots, `poker` command (matches, tournaments, series, bench, verify, export) work today. Roadmap items marked ✅ are done; the rest are being built incrementally.
+> **Status: early development.** Working today:
+> - the engine, the Docker sandbox, the validator and the reference bots;
+> - the `poker` command: matches, tournaments, series, bench, verify and export;
+> - the web UI, with live and replay viewing, a launcher and tournament dashboards;
+> - human and LLM (MCP) seats;
+> - an agent skill for building bots.
+>
+> Roadmap items marked ✅ are done; the rest are being built incrementally.
 
 ---
 
@@ -57,7 +64,7 @@ poker verify data/runs/<match-id>                 # replay the log and check it
 ```
 
 - **Server:** `--server URL` (or `$POKER_SERVER`) picks the server; the default is `http://127.0.0.1:8765`. Results go to that server's runs directory; `--out` only applies with `--local`.
-- **Bots** are names from `my_bots/` or `bots/`, or paths to a `bot.py`, a bot folder or a `bot.zip`. 2–9 per table. `mcp:Name` or `human:Name` adds a seat for an LLM or a person; the CLI prints its token.
+- **Bots** are names from `my_bots/`, `bots/` or another git worktree's `my_bots/` (see [Building bots with an agent](#building-bots-with-an-agent)), or paths to a `bot.py`, a bot folder or a `bot.zip`. 2–9 per table. `mcp:Name` or `human:Name` adds a seat for an LLM or a person; the CLI prints its token.
 - **Fixed mode** (default) plays `--hands` hands with stacks carrying over. **`--cash`** plays `--hands` hands with every hand starting from the starting stack (nobody busts; best for measuring bb/100). **`--freezeout`** plays until one bot has every chip, with blinds rising by hand count (`--max-hands` caps it).
 - **`--blinds`** takes flat blinds `SB/BB[/ANTE]` or a structure: `turbo` (10 hands per level), `standard` (20) or `slow` (40). Structures scale with `--stack`.
 - **Seats are fixed** for the whole match, and the button moves to the next occupied seat each hand.
@@ -103,6 +110,17 @@ poker bench my_bots/mybot --opponents shark aggressor --hands 2000 --workers 4
 
 `poker bench` plays a duplicate cash match against each opponent with **fixed seeds**, so every version of your bot faces exactly the same cards. It reports bb/100 per opponent with a 95% confidence interval, plus the average, and appends the result to `data/bench/<bot>.jsonl` with the bot's code hash, showing how the score changed since the last version. If the confidence intervals overlap, the change may just be noise: add hands.
 
+### Building bots with an agent
+
+The repo ships a Claude Code skill, [`.claude/skills/build-poker-bot`](.claude/skills/build-poker-bot/SKILL.md), that takes an agent from an empty folder to a pull request. Ask Claude Code to build a poker bot and it follows the skill:
+
+1. **Own worktree.** `setup.sh <name>` creates a git worktree `../poker-bot-<name>` on branch `bot/<name>` from `origin/main`, then scaffolds `my_bots/<name>/` from the template. Each agent works only in its own bot folder.
+2. **Shared server.** Run `poker serve` from the main checkout and leave it running. Every agent's matches run there, so you can watch them all live, and agents can play each other: the server finds bots in other worktrees' `my_bots/` by name. `poker bots` and the **New** page list those bots with their branch.
+3. **Refine.** The agent tests against the reference bots and other agents' bots, finds leaks with `analyze_match.py` (the biggest losing hands, with the bot's own logs and `debug`), and keeps a change only if `poker bench` improves beyond the confidence interval.
+4. **PR.** `pr_report.py` writes the metrics section: bench results per opponent with CIs, the version history, and tournament standings against the other agents. The agent opens a PR containing only `my_bots/<name>/`, with the strategy, the metrics, the commands to reproduce each number, and known weaknesses.
+
+After the PR is merged, remove the worktree with `git worktree remove ../poker-bot-<name>`.
+
 ### Web UI and live viewing
 
 ```bash
@@ -111,7 +129,7 @@ poker serve --open                        # http://127.0.0.1:8765  (API docs at 
 poker match shark aggressor --pace 600    # runs on the server; open the watch link it prints
 ```
 
-**New** starts anything from a form: pick a format (table, bracket, round robin, multi-table), add players, choose how each match is played (freezeout, fixed hands or cash), the stack and blinds (presets with a level preview, or flat), and whether to watch it live (Live, Slow, Quick or Instant pace) or play it many times as a series. A summary shows exactly what will run and roughly how long a paced run takes. A single table opens straight into the live view; a tournament opens its run page, where **Now playing** links to the match being played.
+**New** starts anything from a form: pick a format (table, bracket, round robin, multi-table), add players (bots in other worktrees show their branch), choose how each match is played (freezeout, fixed hands or cash), the stack and blinds (presets with a level preview, or flat), and whether to watch it live (Live, Slow, Quick or Instant pace) or play it many times as a series. A summary shows exactly what will run and roughly how long a paced run takes. A single table opens straight into the live view; a tournament opens its run page, where **Now playing** links to the match being played.
 
 **Run pages** show each tournament live as it plays, with **Verify** (replays every match log) and **Download** buttons:
 
@@ -126,6 +144,10 @@ poker match shark aggressor --pace 600    # runs on the server; open the watch l
 - **Realtime with history:** a running match shows **LIVE** and follows each action as it happens. Scrub, step or replay earlier hands at any time, then press **Go live** to jump back to now.
 - **Controls:** play/pause, step, previous/next hand, a timeline with hand markers, speeds from 0.5x to 32x. Keys: Space, Left/Right, Shift+Left/Right, L.
 - **Hand log** of the current hand, a **decision inspector** (what the bot saw, what it returned, how it was applied, think time, its logs and `debug`), a **stack chart** and live **standings**.
+- **Cash games:** stacks reset every hand, so the UI also tracks each bot's running **net** (the sum of its hand results):
+  - each seat shows its net next to its stack;
+  - standings are ranked by net;
+  - the chart tab becomes **Net**, plotting every bot's running total around zero.
 - **Hole cards:** spectator view shows everyone's cards; "Hide hole cards" shows them only at showdown.
 
 For UI development run `poker serve` and `cd web && npm run dev` (Vite on port 5173, proxying `/api`). `make web-test` runs the Playwright end-to-end tests, and `node web/scripts/screenshot.mjs <url> <out.png>` takes a screenshot of any page.
@@ -143,7 +165,7 @@ For UI development run `poker serve` and `cd web && npm run dev` (Vite on port 5
 
 A seat can be played by **you** or by **an LLM over MCP** instead of a bot. Both use the same seat: when it's their turn the table waits (30 s for humans and 120 s for LLMs by default), and if time runs out they check or fold, logged as a timeout just like a bot.
 
-- **In the browser:** on **New**, add **You** and some bots, then **Start and play**. The table stays live (no playback controls). On your turn a dock shows what you need (to call, pot, pot odds, your stack, a countdown) and three big actions: **Fold**, **Check / Call** and **Raise to** (sized with Min, 1/2 pot, 3/4 pot, Pot and All-in chips, a slider or a typed amount). Keys: **F** fold, **C** check/call, **R** type a raise, **Enter** raise, **A** all-in. After you act it confirms what you did. **Review hands** shows the playback controls to look back; **Back to the table** (or your next turn) returns to the live game. Opponents' cards stay face down until showdown.
+- **In the browser:** on **New**, add **You** and some bots, then **Start and play**. The table stays live (no playback controls). On your turn a dock shows what you need (to call, pot, pot odds, your stack, a countdown) and three big actions: **Fold**, **Check / Call** and **Raise to** (sized with Min, 1/2 pot, 3/4 pot, Pot and All-in chips, a slider or a typed amount). Keys: **F** fold, **C** check/call, **R** type a raise, **Enter** raise, **A** all-in. After you act it confirms what you did. **Review hands** shows the playback controls to look back; **Back to the table** (or your next turn) returns to the live game. Opponents' cards stay face down until showdown. If you leave a game that is still running and come back (same browser), you get your seat back.
 - **In the terminal:** `poker play shark aggressor --hands 20` (add `--freezeout`, `--blinds`, `--stack`, `--seed`). Type `f`, `x`, `c`, `r 600`, `a`.
 - **An LLM over MCP:** `poker serve` also serves an MCP endpoint. Connect Claude Code (or any MCP client) with
 
@@ -166,18 +188,19 @@ To run bots in the Docker sandbox (`--docker` on `match`, `run` and `bench`; the
 Validate a bot before submitting it:
 
 ```bash
-make validate BOT=bots/mybot/bot.py
+make validate BOT=my_bots/mybot/bot.py
 ```
 
 ---
 
 ## Writing your bot
 
-Copy the template and edit `decide()`:
+Copy the template into `my_bots/` and edit `decide()`:
 
 ```bash
-cp -r bots/template bots/mybot
-# edit bots/mybot/bot.py
+mkdir -p my_bots && cp -r bots/template my_bots/mybot
+# edit my_bots/mybot/bot.py, then check it:
+make validate BOT=my_bots/mybot/bot.py
 ```
 
 **Game state your bot receives:**
@@ -352,26 +375,17 @@ Blind levels advance by **hand count**, not wall-clock time, so runs are determi
 
 ### Interfaces
 
-- **`poker` CLI:** every command supports `--json`.
-  ```
-  poker serve [--docker]
-  poker bots list | new | validate | import <classroom-dir>
-  poker match shark aggressor --hands 500 --sb 50 --bb 100 --stack 20000
-  poker run configs/bracket_hu.yaml --runs 100
-  poker results | export | verify <run>
-  poker bench <bot>
-  poker lab run|test <bot>
-  poker play <bot>
-  ```
-- **API:** FastAPI with a WebSocket live event stream.
+- ✅ **`poker` CLI** (`--json` on every command): `serve`, `bots`, `match`, `run`, `results`, `runs`, `verify`, `export`, `bench`, `play`. Still to come: `poker bots new | validate | import <classroom-dir>` and `poker lab run | test <bot>`.
+- ✅ **API:** FastAPI with server-sent event streams for live matches.
 - **Web UI:**
-  - format launcher
-  - live/replay table with playback and a decision inspector
-  - run dashboards (bracket tree, MTT tables, Swiss rounds, series charts)
+  - ✅ format launcher
+  - ✅ live/replay table with playback and a decision inspector
+  - ✅ run dashboards: bracket tree, MTT tables, series charts (Swiss rounds come with Swiss)
   - broadcast mode for spectators
   - bots page with benchmark history
   - Bot Lab
-- **MCP server:** LLMs can join seats, wait for their turn and act, using the same seat interface as humans.
+- ✅ **MCP server:** LLMs can join seats, wait for their turn and act, using the same seat interface as humans.
+- ✅ **Agent skills:** `build-poker-bot` (build a bot in a worktree and open a PR) and `verify-poker-runner` (drive the real UI, CLI and MCP end to end).
 
 ### Planned layout
 
@@ -391,7 +405,7 @@ docs/                    bot guide, organizer guide (GitHub Classroom), MCP, CLI
 3. **API + web UI:** ✅ server (jobs, pacing, live event streams); ✅ live/replay table with decision inspector; ✅ launcher; ✅ tournament dashboards
 4. ✅ **Remote seats:** human seats (browser and terminal), MCP server, decision timers
 5. **Tournament UX:** ✅ run dashboards (bracket, round robin, multi-table, series); broadcast mode, bots page
-6. **Lab + docs:** Bot Lab, GitHub Classroom import, Docker validation, docs, end-to-end tests
+6. **Lab + docs:** Bot Lab, GitHub Classroom import, Docker validation, docs; ✅ end-to-end tests (Playwright), ✅ agent skills
 
 Upstream leftovers (`demo.py`, `db/schema.sql`, `CONTRIBUTING.md`) will be replaced or removed as these milestones land.
 
@@ -401,14 +415,17 @@ Upstream leftovers (`demo.py`, `db/schema.sql`, `CONTRIBUTING.md`) will be repla
 
 ```
 arena/          Match runner: seats, tables, blind structures, formats, series, bench, verify, export, `poker` CLI
-arena/server/   HTTP API, background jobs, live event streams (`poker serve`)
+arena/server/   HTTP API, background jobs, live event streams, MCP endpoint (`poker serve`)
 configs/        Example run configs for every format
-web/            React + TypeScript UI (built into web/dist, served by `poker serve`)
+web/            React + TypeScript UI (built into web/dist, served by `poker serve`); Playwright tests in web/e2e
 engine/         Game engine: NLHE rules, hand evaluation, chip tracking
 sandbox/        Bot runner, Docker sandbox, validator, legacy match runner
 bots/           Reference bots and starter template
+my_bots/        Your bots (found by name, as are other worktrees' my_bots/)
 tests/          Engine, runner and arena tests
+.claude/skills/ Agent skills: build-poker-bot, verify-poker-runner
 data/runs/      Match logs (gitignored)
+data/bench/     Bench history per bot (gitignored)
 demo.py         Old upstream demo (to be replaced by the web UI)
 ```
 
