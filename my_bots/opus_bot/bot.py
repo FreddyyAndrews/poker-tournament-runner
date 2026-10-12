@@ -91,6 +91,15 @@ class Opp:
                 den += w
         return num / den
 
+    def station(self, st):
+        """Proven to call big bets: >= 12 observations folding <= 25%."""
+        f = n = 0
+        for key in (st, st + "_rr"):
+            for k in (3, 4):
+                f += self.fold[key][k][0]
+                n += self.fold[key][k][1]
+        return n >= 12 and f <= 0.25 * n
+
     def q(self, key):
         p, w = RATE_PRIOR[key]
         r, n = self.rate[key]
@@ -323,6 +332,8 @@ def in_position(gs, me_seat, live_seats):
 
 def decide(gs):
     t0 = time.time()
+    if gs.get("type") == "warmup" or "your_bot_id" not in gs:
+        return {"action": "check"}
     me = gs["your_bot_id"]
     try:
         update_history(gs, me)
@@ -419,7 +430,13 @@ def decide(gs):
             if Y <= 0:
                 continue
             key = st + ("_rr" if p["bot_id"] in raised_now else "")
-            fo = opp(p["bot_id"]).fold_est(key, Y / max(new_pot, 1))
+            r = Y / max(new_pot, 1)
+            fo = opp(p["bot_id"]).fold_est(key, r)
+            if r < 0.2:
+                fo *= r / 0.2             # nobody folds to a tiny bet
+            if street != "preflop":
+                # a range that already called down is narrower and folds less
+                fo *= math.sqrt(fr.get(p["bot_id"], (1.0, 1.0))[1])
             f_all *= fo
             conts[i] = (1 - fo, Y)
         if not conts:
