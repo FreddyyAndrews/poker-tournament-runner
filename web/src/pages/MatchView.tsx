@@ -50,6 +50,14 @@ export function MatchView({ matchKey, seatToken, playAs }: { matchKey: string; s
   const [turn, setTurn] = useState<{ bot: string; kind: string; time_left_ms: number }[]>([])
 
   const state = useMemo(() => timeline.stateAt(pb.cursor), [timeline, pb.cursor, length])
+  // Chips fly between the previous and current state when the table moves forward
+  // one event at a watchable speed; never when scrubbing or at high speed.
+  const lastCursor = useRef(pb.cursor)
+  const stepped = pb.cursor === lastCursor.current + 1
+  useEffect(() => { lastCursor.current = pb.cursor }, [pb.cursor])
+  const animMs = stepped && pb.speed <= 4 ? Math.max(140, Math.round(420 / pb.speed)) : 0
+  const prevState = useMemo(() => (animMs ? timeline.stateAt(pb.cursor - 1) : null),
+                            [timeline, pb.cursor, animMs])
   const handStarts = useMemo(() => {
     const out: number[] = []
     timeline.list.forEach((e, i) => { if (e.type === 'hand_start') out.push(i) })
@@ -161,6 +169,7 @@ export function MatchView({ matchKey, seatToken, playAs }: { matchKey: string; s
 
         <div className="table-wrap">
           <PokerTable state={state} showAll={showAll} colorOf={colorOf} me={playAs}
+                      prev={prevState} animMs={animMs}
                       waitingFor={running && pb.live && turn[0] ? turn[0].bot : undefined} />
         </div>
 

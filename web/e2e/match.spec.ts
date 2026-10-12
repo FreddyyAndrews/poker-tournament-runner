@@ -19,7 +19,15 @@ test('replay a finished match: table, controls, log, inspector, chart', async ({
   await page.goto(`/#/match/${key}`)
   await expect(page.getByTestId('status')).toHaveText('Complete')
   await expect(page.getByTestId('poker-table')).toBeVisible()
-  for (const bot of ['shark', 'aggressor', 'mathematician']) await expect(page.getByTestId(`seat-${bot}`)).toBeVisible()
+  for (const bot of ['shark', 'aggressor', 'mathematician']) {
+    await expect(page.getByTestId(`seat-${bot}`)).toBeVisible()
+    await expect(page.getByTestId(`stack-${bot}`).locator('svg.chips')).toBeVisible()     // chip stacks
+  }
+  // after the two blind posts, the blinds are on the table as chip piles with their amounts
+  await page.getByTestId('step').click()
+  await page.getByTestId('step').click()
+  await expect(page.locator('[data-testid^=bet-]')).toHaveCount(2)
+  await expect(page.locator('[data-testid^=bet-] .bet')).toHaveText(['50', '100'], { useInnerText: true })
   await expect(page.getByTestId('position')).toContainText('Hand 1 of 15')
 
   // stepping advances the cursor and fills the hand log

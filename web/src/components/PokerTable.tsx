@@ -1,5 +1,7 @@
+import { useEffect, useRef, useState } from 'react'
 import type { TableState } from '../replay/state'
 import { Card } from './Card'
+import { ChipStack } from './Chips'
 
 export const playerColor = (i: number) => `var(--p${Math.min(i, 8)})`
 
@@ -21,18 +23,67 @@ function toward(p: { x: number; y: number }, t: number) {
   return { x: 50 + (p.x - 50) * t, y: 47 + (p.y - 47) * t }
 }
 
+type Pt = { x: number; y: number }
+
+// Where a player's chips sit: to the right of their nameplate (to the left for
+// seats near the right edge), so neighbouring seats' piles never meet.
+function stackPos(pos: Pt): Pt {
+  return { x: pos.x + (pos.x > 75 ? -13.5 : 13.5), y: pos.y + 3.5 }
+}
+const POT_POS: Pt = { x: 46, y: 60 }   // where the pot's chips sit, left of the label
+// The table box is 2 : 1.08, so 1% of its height is 0.54% of its width.
+const H_PER_W = 1.08 / 2
+
+type Flight = { id: number; from: Pt; to: Pt; amount: number }
+let flightId = 0
+
+/** Chip movements between two states of the same hand: bets going in, bets
+ * swept into the pot, antes, and the pot going to the winner. */
+function flightsBetween(prev: TableState, next: TableState, seatOf: (seat: number) => Pt): Flight[] {
+  if (prev.hand === null || prev.hand !== next.hand) return []
+  const out: Flight[] = []
+  const add = (from: Pt, to: Pt, amount: number) => { if (amount > 0) out.push({ id: ++flightId, from, to, amount }) }
+  for (const p of Object.values(next.players)) {
+    const before = prev.players[p.name]
+    if (!before) continue
+    const pos = seatOf(p.seat)
+    const bet = toward(pos, 0.48)
+    const dBet = p.bet - before.bet
+    if (dBet > 0) add(stackPos(pos), bet, dBet)                                  // a bet or call
+    else if (before.bet > 0 && p.bet === 0) add(bet, POT_POS, before.bet)         // swept into the pot
+    else if (dBet === 0 && before.stack > p.stack && next.pot > prev.pot && p.won === before.won)
+      add(stackPos(pos), POT_POS, before.stack - p.stack)                        // an ante
+    if (p.won > before.won) add(POT_POS, stackPos(pos), p.won - before.won)      // winnings
+  }
+  return out
+}
+
 type Props = {
   state: TableState
   showAll: boolean         // spectator view: every hole card face up
   colorOf: (name: string) => string
   me?: string              // playing as this seat: always show its cards
   waitingFor?: string      // a human/LLM seat the table is waiting on
+  prev?: TableState | null // the state one event earlier, to animate chips from
+  animMs?: number          // chip flight duration (0 = no animation)
 }
 
-export function PokerTable({ state, showAll, colorOf, me, waitingFor }: Props) {
+export function PokerTable({ state, showAll, colorOf, me, waitingFor, prev, animMs = 0 }: Props) {
   const players = Object.values(state.players)
   const count = Math.max(state.seatCount, 2)
   const winners = new Set(players.filter(p => p.won > 0).map(p => p.name))
+  const [flights, setFlights] = useState<Flight[]>([])
+  const timers = useRef<number[]>([])
+
+  useEffect(() => {
+    if (!prev || animMs <= 0) return
+    const fresh = flightsBetween(prev, state, seat => seatPos(seat, count))
+    if (!fresh.length) return
+    setFlights(f => [...f, ...fresh])
+    const ids = new Set(fresh.map(f => f.id))
+    timers.current.push(window.setTimeout(() => setFlights(f => f.filter(x => !ids.has(x.id))), animMs + 60))
+  }, [state])   // one animation per new state
+  useEffect(() => () => timers.current.forEach(clearTimeout), [])
 
   return (
     <div className="table" data-testid="poker-table">
@@ -50,13 +101,16 @@ export function PokerTable({ state, showAll, colorOf, me, waitingFor }: Props) {
           {[0, 1, 2, 3, 4].map(i => <Card key={i + (state.board[i] ?? '')} card={state.board[i]} size="lg" />)}
         </div>
         <div className="pot num" data-testid="pot">
-          {state.pot > 0 ? <>Pot {fmt(state.pot)}</> : <span className="muted">&nbsp;</span>}
+          {state.pot > 0
+            ? <><span className="pot-chips" data-testid="pot-chips"><ChipStack amount={state.pot} maxPerColumn={12} maxColumns={5} /></span>
+                <span>Pot {fmt(state.pot)}</span></>
+            : <span className="muted">&nbsp;</span>}
         </div>
       </div>
 
       {players.map(p => {
         const pos = seatPos(p.seat, count)
-        const betPos = toward(pos, 0.56)
+        const betPos = toward(pos, 0.48)
         const hidden = !showAll && !p.shown && p.name !== me
         const cls = ['seat',
           (waitingFor ? waitingFor === p.name : state.acting === p.name) ? 'acting' : '',
@@ -89,12 +143,36 @@ export function PokerTable({ state, showAll, colorOf, me, waitingFor }: Props) {
                   : p.lastAction}
               </div>
             </div>
+            {p.stack > 0 && (() => {
+              const sp = stackPos(pos)
+              return (
+                <div className={'pile' + (p.folded || !p.inHand ? ' dim' : '')}
+                     style={{ left: `${sp.x}%`, top: `${sp.y}%` }} data-testid={`stack-${p.name}`}>
+                  <ChipStack amount={p.stack} maxPerColumn={8} />
+                </div>
+              )
+            })()}
             {p.bet > 0 && (
-              <div className="bet num" style={{ left: `${betPos.x}%`, top: `${betPos.y}%` }}>{fmt(p.bet)}</div>
+              <div className="bet-pile" style={{ left: `${betPos.x}%`, top: `${betPos.y}%` }}
+                   data-testid={`bet-${p.name}`}>
+                <ChipStack amount={p.bet} maxPerColumn={8} maxColumns={3} />
+                <span className="bet num">{fmt(p.bet)}</span>
+              </div>
             )}
           </div>
         )
       })}
+      {flights.map(f => (
+        <div key={f.id} className="pile flight"
+             style={{
+               left: `${f.to.x}%`, top: `${f.to.y}%`,
+               ['--dx' as string]: `${f.from.x - f.to.x}cqw`,
+               ['--dy' as string]: `${(f.from.y - f.to.y) * H_PER_W}cqw`,
+               ['--ms' as string]: `${animMs}ms`,
+             }}>
+          <ChipStack amount={f.amount} maxPerColumn={5} maxColumns={3} />
+        </div>
+      ))}
     </div>
   )
 }
