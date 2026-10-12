@@ -100,6 +100,17 @@ class Opp:
         self.post_sz = [0, 0, 0, 0]      # postflop bets/raises by size: <0.4, <0.8, <1.5 pot, bigger/all-in
         self.post_actions = 0
 
+    def selectivity(self, pre):
+        """How much an opponent's aggression says about their hand: scaled by how
+        often they fold at all. A player who never folds is not hand-selective."""
+        folds = faced = 0
+        for ag in (False, True):
+            for f, n in self.ftb[(pre, ag)]:
+                folds += f
+                faced += n
+        rate = (2 * 0.4 + folds) / (2 + faced)
+        return max(0.0, min(1.0, rate / 0.3))
+
     def pre_range(self, k):
         """Fraction of hands behind a preflop raise in size bucket k (bigger = tighter)."""
         prior = PRE_SZ_PRIOR
@@ -145,6 +156,7 @@ class Opp:
             "hands": self.hands,
             "vpip": round(self.vpip_rate(), 2),
             "pfr": round(self.pfr_rate(), 2),
+            "sel": [round(self.selectivity(True), 2), round(self.selectivity(False), 2)],
             "pre_range_by_size": [round(self.pre_range(k), 2) for k in range(4)],
             "post_agg_by_size": [round(self.post_agg(k), 2) for k in range(4)],
             "raise_vs_bet": [round(self.raise_rate(True), 2), round(self.raise_rate(False), 2)],
@@ -468,7 +480,12 @@ def _decide(gs, t0):
         bid = p["bot_id"]
         if bid in pre_raised:
             k = rp.pre_bucket.get(bid, 1)
-            q = o.pre_range(k) if o else max(0.03, min(1.0, sum(PRE_SZ_PRIOR[k:])))
+            if o:
+                q_sz = o.pre_range(k)
+                q_full = max(q_sz, min(1.0, o.pfr_rate(0.25 if n_players == 2 else 0.15) * 1.15))
+                q = q_full - o.selectivity(True) * (q_full - q_sz)
+            else:
+                q = max(0.03, min(1.0, sum(PRE_SZ_PRIOR[k:])))
         elif bid in pre_called:
             q = max(0.08, min(1.0, (o.vpip_rate(0.45 if n_players == 2 else 0.3) if o else 0.45) * 1.15))
         else:
@@ -477,7 +494,7 @@ def _decide(gs, t0):
         if not pre and bid in rp.street_bucket:
             k = rp.street_bucket[bid]
             agg = o.post_agg(k) if o else max(0.03, sum(POST_SZ_PRIOR[k:]))
-            fb = max(0.0, 1 - agg)
+            fb = max(0.0, 1 - agg) * (o.selectivity(False) if o else 1.0)
         return q, fb
 
     specs = [base_spec(p) for p in live]
