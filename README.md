@@ -107,7 +107,9 @@ poker serve --open                        # http://127.0.0.1:8765  (API docs at 
 poker match shark aggressor --pace 600    # then watch it from the Recent list
 ```
 
-The UI lists recent matches, tournaments and series. Open a match to watch it:
+**New** starts anything from a form: pick a format (table, bracket, round robin, multi-table), add players, choose how each match is played (freezeout, fixed hands or cash), the stack and blinds (presets with a level preview, or flat), and whether to watch it live (Live, Slow, Quick or Instant pace) or play it many times as a series. A summary shows exactly what will run and roughly how long a paced run takes. A single table opens straight into the live view; a tournament opens its run page, where **Now playing** links to the match being played.
+
+**Recent** lists every match, tournament and series. Open a match to watch it:
 
 - **Table:** cards dealt, bets, the pot, the acting bot outlined, showdowns with hand names and winners.
 - **Realtime with history:** a running match shows **LIVE** and follows each action as it happens. Scrub, step or replay earlier hands at any time, then press **Go live** to jump back to now.
@@ -355,7 +357,7 @@ docs/                    bot guide, organizer guide (GitHub Classroom), MCP, CLI
 
 1. ✅ **Engine + core:** engine patches, runner protocol v2, seats, tables, event logs, `poker match`, `poker verify`
 2. ✅ **Formats + metrics:** table, bracket, round-robin, MTT, series, stats, `poker run/results/runs/export/bench` (Swiss and stages after v1)
-3. **API + web UI:** ✅ server (jobs, pacing, live event streams); ✅ live/replay table with decision inspector; launcher and dashboards next
+3. **API + web UI:** ✅ server (jobs, pacing, live event streams); ✅ live/replay table with decision inspector; ✅ launcher; dashboards next
 4. **Remote seats:** human seats, MCP server, decision timers
 5. **Tournament UX:** run dashboards, broadcast mode, bots page
 6. **Lab + docs:** Bot Lab, GitHub Classroom import, Docker validation, docs, end-to-end tests

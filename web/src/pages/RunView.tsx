@@ -39,6 +39,20 @@ export function RunView({ runId }: { runId: string }) {
         {run.kind === 'series' && run.job?.status === 'running' && <> &middot; {run.job.runs_done} runs done</>}
       </p>
 
+      {live.size > 0 && (
+        <section className="section now-playing" data-testid="now-playing">
+          <h2>Now playing</h2>
+          {[...live].map(k => (
+            <div key={k} className="np-row">
+              <span className="pill live"><span className="dot" />Live</span>
+              <span>{k.split('/').pop()}</span>
+              <span className="spacer" />
+              <a href={`#/match/${k}`}><button className="primary small" data-testid="watch">Watch</button></a>
+            </div>
+          ))}
+        </section>
+      )}
+
       {run.kind === 'series' && d.aggregate && (
         <section className="section">
           <h2>Results across runs</h2>

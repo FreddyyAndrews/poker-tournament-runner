@@ -3,7 +3,7 @@
 import { chromium } from 'playwright'
 const [url, out, wait = '1500', ...actions] = process.argv.slice(2)
 const browser = await chromium.launch()
-const page = await browser.newPage({ viewport: { width: 1440, height: 860 }, deviceScaleFactor: 1 })
+const page = await browser.newPage({ viewport: { width: 1440, height: Number(process.env.VIEW_H ?? 860) }, deviceScaleFactor: 1 })
 const errors = []
 page.on('console', m => { if (m.type() === 'error') errors.push(m.text()) })
 page.on('pageerror', e => errors.push(String(e)))
@@ -14,7 +14,8 @@ for (const a of actions) {
   if (kind === 'click') await page.click(arg)
   if (kind === 'key') await page.keyboard.press(arg)
   if (kind === 'wait') await page.waitForTimeout(Number(arg))
+  if (kind === 'fill') { const [sel, val] = arg.split('|'); await page.fill(sel, val) }
 }
-await page.screenshot({ path: out })
+await page.screenshot({ path: out, fullPage: process.env.FULL === '1' })
 console.log(JSON.stringify({ errors }))
 await browser.close()
