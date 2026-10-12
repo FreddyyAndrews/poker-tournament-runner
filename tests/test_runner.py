@@ -322,3 +322,15 @@ def test_warmup_runs_in_parallel(tmp_path):
     t0 = time.monotonic()
     run_match("m", {b: str(path) for b in ("a", "b", "c", "d")}, n_hands=1, seed=1)
     assert time.monotonic() - t0 < 4.0   # sequential would be >= 6 s
+
+
+def test_validator_json_survives_a_printing_bot(tmp_path):
+    import json, subprocess
+    bot = tmp_path / "chatty.py"
+    bot.write_text("print('loading')\ndef decide(state):\n    print('thinking', state['hand_num'])\n"
+                   "    return {'action': 'check' if state['can_check'] else 'call'}\n")
+    out = subprocess.run([sys.executable, os.path.join(os.path.dirname(__file__), "..", "sandbox", "validator.py"),
+                          str(bot), "--json"], capture_output=True, text=True, timeout=60)
+    report = json.loads(out.stdout)
+    assert report["passed"] and out.returncode == 0
+    assert "thinking" in out.stderr

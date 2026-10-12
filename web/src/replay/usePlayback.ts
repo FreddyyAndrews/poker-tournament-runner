@@ -71,11 +71,11 @@ export function usePlayback(events: () => PokerEvent[], length: number, running:
   }, [length])
 
   return {
-    cursor, playing: playing || live, speed, live, setSpeed,
+    cursor, playing: playing || (live && running), speed, live, setSpeed,
     play: () => { if (cursor >= length - 1 && !running) setCursor(-1); setLive(false); setPlaying(true) },
     pause: () => { setLive(false); setPlaying(false) },
     toggle: () => {
-      if (playing || live) { setLive(false); setPlaying(false) }
+      if (playing || (live && running)) { setLive(false); setPlaying(false) }
       else { if (cursor >= length - 1 && !running) setCursor(-1); setPlaying(true) }
     },
     seek,

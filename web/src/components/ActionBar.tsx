@@ -21,7 +21,7 @@ export function ActionBar({ token, seat }: { token: string; seat: SeatView | nul
   useEffect(() => { setSeenAt(Date.now()) }, [p?.time_left_ms])
 
   if (!seat) return null
-  if (seat.finished) return <div className="action-bar"><span className="sub">You were seated as <b>{seat.name}</b>. The match is over.</span></div>
+  if (seat.finished) return <div className="action-bar" data-testid="action-bar"><span className="sub">You were seated as <b>{seat.name}</b>. The match is over.</span></div>
   if (!p || !s || sent === p.id) {
     return <div className="action-bar waiting" data-testid="action-bar">
       <span className="sub">Playing as <b>{seat.name}</b>. Waiting for the other players...</span></div>

@@ -100,6 +100,12 @@ TEST_STATES = [
             "seat_to_act": 0,
             "your_bot_id": "bot_under_test",
             "time_limit_ms": 2000,
+            "hand_num": 0,
+            "blinds": {"sb": 50, "bb": 100, "ante": 0},
+            "button_seat": 0,
+            "sb_seat": 0,
+            "bb_seat": 1,
+            "match_action_log": [],
             "pot": 150,
             "community_cards": [],
             "current_bet": 100,
@@ -132,6 +138,12 @@ TEST_STATES = [
             "seat_to_act": 0,
             "your_bot_id": "bot_under_test",
             "time_limit_ms": 2000,
+            "hand_num": 7,
+            "blinds": {"sb": 50, "bb": 100, "ante": 0},
+            "button_seat": 0,
+            "sb_seat": 0,
+            "bb_seat": 1,
+            "match_action_log": [],
             "pot": 300,
             "community_cards": ["7s", "Td", "2h"],
             "current_bet": 0,
@@ -161,6 +173,12 @@ TEST_STATES = [
             "seat_to_act": 0,
             "your_bot_id": "bot_under_test",
             "time_limit_ms": 2000,
+            "hand_num": 23,
+            "blinds": {"sb": 50, "bb": 100, "ante": 0},
+            "button_seat": 0,
+            "sb_seat": 0,
+            "bb_seat": 1,
+            "match_action_log": [],
             "pot": 4000,
             "community_cards": ["7s", "Td", "2h", "Kc", "5d"],
             "current_bet": 2000,
@@ -190,6 +208,12 @@ TEST_STATES = [
             "seat_to_act": 0,
             "your_bot_id": "bot_under_test",
             "time_limit_ms": 2000,
+            "hand_num": 41,
+            "blinds": {"sb": 50, "bb": 100, "ante": 0},
+            "button_seat": 0,
+            "sb_seat": 0,
+            "bb_seat": 1,
+            "match_action_log": [],
             "pot": 200,
             "community_cards": [],
             "current_bet": 100,
@@ -583,7 +607,11 @@ def main():
     parser.add_argument("--json", action="store_true", help="Output as JSON")
     args = parser.parse_args()
 
-    result = validate(args.bot_path)
+    # The bot is imported and called in this process: anything it prints goes to
+    # stderr, so stdout carries only the report (the --json output stays valid JSON).
+    import contextlib
+    with contextlib.redirect_stdout(sys.stderr):
+        result = validate(args.bot_path)
 
     if args.json:
         print(json.dumps(result, indent=2))

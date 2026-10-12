@@ -281,3 +281,15 @@ def test_random_hands_never_ask_pointless_decisions():
         result, _ = play_out(eng, eng.start_hand(), policy)
         assert sum(result["final_stacks"].values()) == total
         assert result["starting_stacks"] == {f"bot_{i}": s for i, s in enumerate(stacks)}
+
+
+def test_validator_states_have_every_field_bots_get():
+    """The validator's sample states must contain every key a real decision has,
+    or bots that use documented fields fail validation."""
+    from sandbox.validator import TEST_STATES
+    from arena.table import Table
+    eng = PokerEngine("h", ["a", "b"])
+    real = set(eng.start_hand()) | {"match_action_log", "time_limit_ms"}
+    for t in TEST_STATES:
+        missing = real - set(t["state"])
+        assert not missing, f"{t['name']} lacks {sorted(missing)}"
