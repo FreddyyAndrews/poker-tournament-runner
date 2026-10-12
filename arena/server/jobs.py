@@ -17,6 +17,7 @@ from pathlib import Path
 from arena import bots as botlib
 from arena import formats
 from arena.pacing import Cancelled
+from arena.remote import RemoteSeat, SeatHub
 from arena.series import run_series
 from arena.table import MatchConfig, run_match
 
@@ -32,6 +33,7 @@ class Job:
     started: float = None
     finished: float = None
     live: list = field(default_factory=list)       # match keys being played right now
+    seats: list = field(default_factory=list)      # remote seats: name, kind, token
     matches_done: int = 0
     runs_done: int = 0
     cancel: threading.Event = field(default_factory=threading.Event)
@@ -40,7 +42,8 @@ class Job:
         return {"id": self.id, "kind": self.kind, "status": self.status, "error": self.error,
                 "params": self.params, "created": self.created, "started": self.started,
                 "finished": self.finished, "live": list(self.live),
-                "matches_done": self.matches_done, "runs_done": self.runs_done}
+                "matches_done": self.matches_done, "runs_done": self.runs_done,
+                "seats": [{"name": x["name"], "kind": x["kind"]} for x in self.seats]}
 
     @property
     def active(self):
@@ -52,8 +55,9 @@ def _stamp(prefix, seed):
 
 
 class JobManager:
-    def __init__(self, runs_dir: Path):
+    def __init__(self, runs_dir: Path, hub: SeatHub = None):
         self.runs_dir = Path(runs_dir)
+        self.hub = hub or SeatHub()
         self.jobs = {}
         self._lock = threading.Lock()
 
@@ -81,8 +85,11 @@ class JobManager:
 
     def start_match(self, p: dict) -> Job:
         """p: bots, names, mode, hands, starting_stack, blinds, seed, time_limit_ms,
-        docker, pace_ms, id. Validates before starting (raises ValueError)."""
-        specs = botlib.resolve_all(p["bots"], names=p.get("names"))
+        time_limits ({"human": ms, "mcp": ms}), docker, pace_ms, id.
+        Bots may include "human:Name" / "mcp:Name" seats. Validates before
+        starting (raises ValueError). Returns the job; job.seats lists the
+        remote seats (name, kind, token)."""
+        specs = botlib.resolve_all(p["bots"], names=p.get("names"), allow_remote=True)
         if not 2 <= len(specs) <= 9:
             raise ValueError(f"A table needs 2-9 players, got {len(specs)}")
         mode = p.get("mode") or "fixed"
@@ -96,6 +103,14 @@ class JobManager:
         match_id = p.get("id") or _stamp("match", config.seed)
         self._check_new(match_id)
         job = Job(id=match_id, kind="match", params=p, live=[match_id])
+        limits = p.get("time_limits") or {}
+        for i, spec in enumerate(specs):
+            if isinstance(spec, botlib.RemoteSpec):
+                seat = RemoteSeat(spec.name, spec.kind, time_limit_ms=limits.get(spec.kind), cancel=job.cancel)
+                self.hub.add(seat, match_id)
+                specs[i] = seat
+                job.seats.append({"name": seat.name, "kind": seat.kind, "token": seat.token,
+                                  "time_limit_ms": seat.time_limit_ms})
 
         def work():
             run_match(specs, config, match_id=match_id, runs_dir=self.runs_dir,

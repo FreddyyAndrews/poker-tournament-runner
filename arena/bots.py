@@ -74,18 +74,53 @@ def resolve(spec: str) -> tuple:
     raise ValueError(f"Bot {spec!r} not found (not a path, and not a bot in {searched})")
 
 
-def resolve_all(specs, names=None) -> list:
+REMOTE_KINDS = ("human", "mcp")
+
+
+@dataclass(frozen=True)
+class RemoteSpec:
+    """A seat played by a person or an LLM instead of a bot: "human:Name" / "mcp:Name"."""
+    name: str
+    kind: str        # human | mcp
+    source: str
+
+    def to_dict(self):
+        return {"name": self.name, "kind": self.kind, "source": self.source}
+
+
+def remote_kind(spec: str):
+    """("human"|"mcp", name) for "human:Name" / "mcp:Name" specs, else None."""
+    if isinstance(spec, str) and ":" in spec:
+        kind, _, rest = spec.partition(":")
+        if kind in REMOTE_KINDS:
+            name = _NAME_OK.sub("_", rest.strip()) or ("You" if kind == "human" else "LLM")
+            return kind, name
+    return None
+
+
+def resolve_all(specs, names=None, allow_remote=False) -> list:
     """Resolve several specs, giving each a unique name (shark, shark_2, ...).
-    `names` optionally overrides the default name for each spec."""
+    `names` optionally overrides the default name for each spec.
+    With allow_remote, "human:Name" / "mcp:Name" become RemoteSpecs."""
     out, used = [], set()
     for i, spec in enumerate(specs):
-        path, default = resolve(spec)
+        remote = remote_kind(spec)
+        if remote and not allow_remote:
+            raise ValueError(f"{spec!r}: human and MCP seats can only play single matches "
+                             "(start them with POST /api/matches, the New page, or poker play)")
+        if remote:
+            path, default = None, remote[1]
+        else:
+            path, default = resolve(spec)
         base = (names[i] if names and i < len(names) and names[i] else default)
         name, n = base, 2
         while name in used:
             name, n = f"{base}_{n}", n + 1
         used.add(name)
-        out.append(BotSpec(name=name, path=path, hash=bot_hash(path), source=spec))
+        if remote:
+            out.append(RemoteSpec(name=name, kind=remote[0], source=spec))
+        else:
+            out.append(BotSpec(name=name, path=path, hash=bot_hash(path), source=spec))
     return out
 
 

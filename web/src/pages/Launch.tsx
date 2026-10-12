@@ -52,6 +52,8 @@ export function Launch() {
   const [seed, setSeed] = useState('')
   const [timeLimit, setTimeLimit] = useState('')
   const [docker, setDocker] = useState(false)
+  const [humanSecs, setHumanSecs] = useState(30)
+  const [llmSecs, setLlmSecs] = useState(120)
   const [name, setName] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -81,10 +83,13 @@ export function Launch() {
   }, [mode])
 
   const series = runs > 1
+  const remote = entrants.filter(e => e.startsWith('human:') || e.startsWith('mcp:'))
+  const remoteOk = format === 'table' && !series
   const blinds = blindKind === 'preset' ? preset : `${flat.sb}/${flat.bb}${flat.ante ? '/' + flat.ante : ''}`
   const problem = useMemo(() => {
     const n = entrants.length
     if (n < 2) return 'Add at least two players.'
+    if (remote.length && !remoteOk) return 'You and LLM seats can only play a single table, played once.'
     if (format === 'table' && n > 9) return 'A table seats at most 9; use Multi-table for more.'
     if (format === 'table' && duplicate && n !== 2) return 'Duplicate needs exactly two players.'
     if (format === 'mtt' && mode !== 'freezeout') return 'Multi-table is always a freezeout.'
@@ -92,7 +97,7 @@ export function Launch() {
     if (stack < 1) return 'Starting stack must be positive.'
     if (hands < 1) return 'Hands must be at least 1.'
     return null
-  }, [entrants, format, duplicate, mode, blindKind, flat, stack, hands])
+  }, [entrants, format, duplicate, mode, blindKind, flat, stack, hands, remote.length, remoteOk])
 
   const summary = useMemo(() => {
     const n = entrants.length
@@ -133,8 +138,12 @@ export function Launch() {
     }
     try {
       if (format === 'table' && !series) {
-        const r = await post('/api/matches', { ...common, names: undefined })
-        location.hash = `#/match/${r.match_key}`
+        const r = await post('/api/matches', { ...common, names: undefined,
+          time_limits: { human: humanSecs * 1000, mcp: llmSecs * 1000 } })
+        const me = (r.seats ?? []).find((x: any) => x.kind === 'human')
+        location.hash = me
+          ? `#/match/${r.match_key}?seat=${encodeURIComponent(me.token)}&as=${encodeURIComponent(me.name)}`
+          : `#/match/${r.match_key}`
       } else {
         const r = await post('/api/runs', {
           ...common, format, name: name.trim() || undefined, runs, workers: series ? workers : (pace ? 1 : workers),
@@ -181,13 +190,27 @@ export function Launch() {
               {entrants.map((b, i) => (
                 <span key={i} className="chip">
                   {format === 'bracket' && seeding === 'given' && <span className="muted num">{i + 1}</span>}
-                  <span className="swatch" style={{ background: playerColor(i) }} />{b}
+                  <span className="swatch" style={{ background: playerColor(i) }} />{label(b)}
                   <button className="x" onClick={() => remove(i)} aria-label={`Remove ${b}`}>&times;</button>
                 </span>
               ))}
               {entrants.length > 0 && <button className="ghost small" onClick={() => setEntrants([])}>Clear</button>}
             </div>
             <div className="bot-list">
+              <div className="bot-row">
+                <span>You <span className="muted">(play from this browser)</span></span>
+                <span className="muted mono">human</span><span />
+                <button className="small" disabled={!remoteOk || entrants.some(e => e.startsWith('human:'))}
+                        title={remoteOk ? '' : 'Only for a single table, played once'}
+                        onClick={() => add('human:You')} data-testid="add-human">Add</button>
+              </div>
+              <div className="bot-row">
+                <span>An LLM <span className="muted">(over MCP, e.g. Claude)</span></span>
+                <span className="muted mono">mcp</span><span />
+                <button className="small" disabled={!remoteOk} title={remoteOk ? '' : 'Only for a single table, played once'}
+                        onClick={() => add(`mcp:${entrants.some(e => e.startsWith('mcp:')) ? 'llm' + (remote.length + 1) : 'claude'}`)}
+                        data-testid="add-mcp">Add</button>
+              </div>
               {bots.map(b => (
                 <div key={b.path} className="bot-row">
                   <span>{b.name}</span>
@@ -289,7 +312,9 @@ export function Launch() {
             <div className="fields" style={{ marginTop: 10 }}>
               {format !== 'table' && <label>Name<input value={name} onChange={e => setName(e.target.value)} placeholder="optional" /></label>}
               <label>Seed<input value={seed} onChange={e => setSeed(e.target.value.replace(/\D/g, ''))} placeholder="random" data-testid="seed" /></label>
-              <label>Time limit (ms)<input value={timeLimit} onChange={e => setTimeLimit(e.target.value.replace(/\D/g, ''))} placeholder="2000" /></label>
+              <label>Bot time limit (ms)<input value={timeLimit} onChange={e => setTimeLimit(e.target.value.replace(/\D/g, ''))} placeholder="2000" /></label>
+              <label>Your time (s)<input type="number" min={5} value={humanSecs} onChange={e => setHumanSecs(Number(e.target.value))} /></label>
+              <label>LLM time (s)<input type="number" min={5} value={llmSecs} onChange={e => setLlmSecs(Number(e.target.value))} /></label>
             </div>
             <label className="check"><input type="checkbox" checked={docker} onChange={e => setDocker(e.target.checked)} />
               Run bots in the Docker sandbox (build it first: ./sandbox.sh build)</label>
@@ -302,12 +327,19 @@ export function Launch() {
           {problem && <p className="hint">{problem}</p>}
           {error && <p className="error-text" data-testid="launch-error">{error}</p>}
           <button className="primary" disabled={!!problem || busy} onClick={launch} data-testid="launch-btn">
-            {busy ? 'Starting...' : series ? `Run ${runs} times` : pace ? 'Start and watch' : 'Start'}
+            {busy ? 'Starting...' : series ? `Run ${runs} times` : entrants.some(e => e.startsWith('human:')) ? 'Start and play'
+              : pace ? 'Start and watch' : 'Start'}
           </button>
         </aside>
       </div>
     </div>
   )
+}
+
+function label(entrant: string) {
+  if (entrant.startsWith('human:')) return `${entrant.slice(6)} (you)`
+  if (entrant.startsWith('mcp:')) return `${entrant.slice(4)} (LLM)`
+  return entrant
 }
 
 async function post(path: string, body: unknown) {

@@ -13,7 +13,7 @@ export type MatchData = {
 
 // Load a match's events, then (if it is still being played) follow the live
 // stream from where the load stopped. New events are appended to one Timeline.
-export function useMatch(key: string): MatchData {
+export function useMatch(key: string, as?: string): MatchData {
   const timeline = useRef(new Timeline())
   const [length, setLength] = useState(0)
   const [meta, setMeta] = useState<MatchMeta | null>(null)
@@ -33,14 +33,14 @@ export function useMatch(key: string): MatchData {
         const m = await api.match(key)
         if (cancelled) return
         setMeta(m)
-        const first = await api.events(key, 0)
+        const first = await api.events(key, 0, as)
         if (cancelled) return
         timeline.current.append(first.events)
         setLength(timeline.current.length)
         setStatus(first.status as MatchStatus)
         if (first.status !== 'running') return
 
-        source = new EventSource(api.streamUrl(key, first.next))
+        source = new EventSource(api.streamUrl(key, first.next, as))
         source.addEventListener('poker', (msg) => {
           timeline.current.append([JSON.parse((msg as MessageEvent).data) as PokerEvent])
           setLength(timeline.current.length)
@@ -53,7 +53,7 @@ export function useMatch(key: string): MatchData {
     })()
 
     return () => { cancelled = true; source?.close() }
-  }, [key])
+  }, [key, as])
 
   return { meta, timeline: timeline.current, length, status, error }
 }

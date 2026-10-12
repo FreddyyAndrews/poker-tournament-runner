@@ -105,7 +105,7 @@ table.list td.r, table.list th.r { text-align: right; }
         background: var(--surface); }
 
 /* ---- table -------------------------------------------------------------- */
-.table-wrap { flex: 1; min-height: 320px; display: flex; align-items: center; justify-content: center; }
+.table-wrap { flex: 1; min-height: 320px; display: flex; align-items: center; justify-content: center; padding: 6px 0 26px; }
 .table {
   position: relative; width: 100%; max-width: 980px; aspect-ratio: 2 / 1.08;
   container-type: inline-size;
@@ -359,3 +359,22 @@ table.rr .live-dot { position: absolute; top: 5px; right: 5px; width: 6px; heigh
 .progress { height: 4px; background: var(--surface-3); border-radius: 2px; overflow: hidden; margin: 8px 0 18px; max-width: 420px; }
 .progress span { display: block; height: 100%; background: var(--text); transition: width 300ms; }
 .series-chart { max-width: 760px; }
+
+/* ---- playing ------------------------------------------------------------ */
+.action-bar { border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); padding: 12px 14px;
+              display: flex; flex-direction: column; gap: 10px; }
+.action-bar.mine { border-color: var(--text); }
+.action-bar .ab-top { display: flex; align-items: center; gap: 12px; }
+.action-bar .you { font-weight: 700; }
+.action-bar .spacer { flex: 1; }
+.action-bar .timer { font-weight: 600; min-width: 36px; text-align: right; }
+.timebar { height: 3px; background: var(--surface-3); border-radius: 2px; overflow: hidden; }
+.timebar span { display: block; height: 100%; background: var(--text); transition: width 200ms linear; }
+.ab-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.ab-actions > button { min-width: 90px; font-weight: 600; }
+.ab-actions .raise { display: inline-flex; align-items: center; gap: 6px; }
+.ab-actions .raise input[type=range] { width: 160px; accent-color: var(--text); }
+.ab-actions .raise input[type=number] { width: 100px; }
+.notice { border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); padding: 10px 14px;
+          font-size: 13px; color: var(--text-2); }
+.notice code { font-family: var(--mono); font-size: 12px; color: var(--text); background: var(--bg); padding: 1px 6px; border-radius: 4px; }

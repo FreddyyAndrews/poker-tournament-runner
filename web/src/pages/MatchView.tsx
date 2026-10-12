@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { api } from '../api'
+import { api, type SeatView } from '../api'
+import { ActionBar } from '../components/ActionBar'
 import { Controls } from '../components/Controls'
 import { HandLog } from '../components/HandLog'
 import { Inspector } from '../components/Inspector'
@@ -11,14 +12,16 @@ import { usePlayback } from '../replay/usePlayback'
 
 type Tab = 'hand' | 'decision' | 'chart'
 
-export function MatchView({ matchKey }: { matchKey: string }) {
-  const data = useMatch(matchKey)
+export function MatchView({ matchKey, seatToken, playAs }: { matchKey: string; seatToken?: string; playAs?: string }) {
+  const data = useMatch(matchKey, playAs)
   const { timeline, length, status } = data
   const running = status === 'running'
   const events = useCallback(() => timeline.list, [timeline])
   const pb = usePlayback(events, length, running, running)
   const [tab, setTab] = useState<Tab>('hand')
-  const [showAll, setShowAll] = useState(true)
+  const [showAll, setShowAll] = useState(!playAs)
+  const [seat, setSeat] = useState<SeatView | null>(null)
+  const [turn, setTurn] = useState<{ bot: string; kind: string; time_left_ms: number }[]>([])
 
   const state = useMemo(() => timeline.stateAt(pb.cursor), [timeline, pb.cursor, length])
   const handStarts = useMemo(() => {
@@ -33,6 +36,24 @@ export function MatchView({ matchKey }: { matchKey: string }) {
   }, [handStarts, pb.cursor])
 
   const start = timeline.list[0]?.type === 'match_start' ? timeline.list[0] : null
+  const remoteSeats = start ? start.seats.filter(s => s.kind === 'human' || s.kind === 'mcp') : []
+
+  // Holding a seat: poll it for our pending decision. Spectating a match with
+  // human/LLM seats: poll who the table is waiting on.
+  useEffect(() => {
+    if (!running || (!seatToken && remoteSeats.length === 0)) return
+    let alive = true
+    const tick = async () => {
+      try {
+        if (seatToken) { const sv = await api.seat(seatToken); if (alive) setSeat(sv) }
+        const t = await api.turn(matchKey); if (alive) setTurn(t)
+      } catch { /* the next poll will retry */ }
+    }
+    tick()
+    const t = setInterval(tick, 300)
+    return () => { alive = false; clearInterval(t) }
+  }, [running, seatToken, matchKey, remoteSeats.length])
+  useEffect(() => { if (!running && seatToken) api.seat(seatToken).then(setSeat).catch(() => {}) }, [running, seatToken])
   const names = useMemo(() => start ? start.seats.map(s => s.name) : [], [start])
   // Seat order fixes colours; players who join later (multi-table) get a stable colour from their name.
   const colorOf = useCallback((n: string) => {
@@ -95,8 +116,24 @@ export function MatchView({ matchKey }: { matchKey: string }) {
         </div>
 
         <div className="table-wrap">
-          <PokerTable state={state} showAll={showAll} colorOf={colorOf} />
+          <PokerTable state={state} showAll={showAll} colorOf={colorOf} me={playAs}
+                      waitingFor={running && pb.live && turn[0] ? turn[0].bot : undefined} />
         </div>
+
+        {running && turn.length > 0 && !(seatToken && turn.some(t => t.bot === playAs)) && (
+          <div className="notice num" data-testid="waiting">
+            Waiting for <b>{turn[0].bot}</b> ({turn[0].kind === 'mcp' ? 'LLM over MCP' : 'human'}),
+            {' '}{Math.ceil(turn[0].time_left_ms / 1000)}s left
+          </div>
+        )}
+        {running && remoteSeats.some(s => s.kind === 'mcp') && (
+          <div className="notice" data-testid="mcp-notice">
+            {remoteSeats.filter(s => s.kind === 'mcp').map(s => s.name).join(', ')} {remoteSeats.filter(s => s.kind === 'mcp').length > 1 ? 'are' : 'is'} played
+            by an LLM over MCP. Connect one with <code>claude mcp add --transport http poker {location.origin}/mcp</code>,
+            then ask it to call <code>list_open_seats</code> and play.
+          </div>
+        )}
+        {seatToken && <ActionBar token={seatToken} seat={seat} />}
 
         <Controls pb={pb} length={length} running={running} handStarts={handStarts}
                   currentHand={state.hand} totalHands={totalHands} />

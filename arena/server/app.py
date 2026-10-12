@@ -28,6 +28,7 @@ from arena import formats, structures
 from arena.events import DEFAULT_RUNS_DIR, EVENTS_FILE, SUMMARY_FILE
 from arena.pacing import DEFAULT_PACE_MS
 from arena.server.jobs import JobManager
+from arena.server.mcp_server import build_mcp
 from arena.server.progress import run_progress, series_progress
 from arena.series import SERIES_FILE
 
@@ -47,7 +48,15 @@ class MatchRequest(BaseModel):
     time_limit_ms: Optional[int] = None
     docker: bool = False
     pace_ms: Optional[int] = None          # default: DEFAULT_PACE_MS (watchable)
+    time_limits: Optional[dict] = None     # per seat kind, e.g. {"human": 30000, "mcp": 120000}
     id: Optional[str] = None
+
+
+class ActRequest(BaseModel):
+    action: str
+    amount: Optional[int] = None
+    decision_id: Optional[int] = None      # guard against acting on a decision you didn't see
+    note: Optional[str] = None             # optional reasoning, saved as the decision's logs
 
 
 class RunRequest(BaseModel):
@@ -71,17 +80,22 @@ class RunRequest(BaseModel):
     id: Optional[str] = None
 
 
-def create_app(runs_dir: Path = DEFAULT_RUNS_DIR) -> FastAPI:
+def create_app(runs_dir: Path = DEFAULT_RUNS_DIR, port: int = 8765) -> FastAPI:
     runs_dir = Path(runs_dir)
     jobs = JobManager(runs_dir)
+    mcp = build_mcp(jobs, runs_dir, base_url=f"http://127.0.0.1:{port}")
+    mcp_app = mcp.streamable_http_app(streamable_http_path="/mcp", stateless_http=True,
+                                      json_response=True)
 
     @asynccontextmanager
     async def lifespan(app):
-        yield
+        async with mcp.session_manager.run():
+            yield
         jobs.shutdown()
 
     app = FastAPI(title="Poker Tournament Runner", version=arena.__version__, lifespan=lifespan)
     app.state.jobs = jobs
+    app.state.mcp = mcp
     app.state.runs_dir = runs_dir
 
     # -- helpers ---------------------------------------------------------------
@@ -153,7 +167,7 @@ def create_app(runs_dir: Path = DEFAULT_RUNS_DIR) -> FastAPI:
             job = jobs.start_match(p)
         except ValueError as e:
             bad_request(e)
-        return {"job": job.to_dict(), "match_key": job.id}
+        return {"job": job.to_dict(), "match_key": job.id, "seats": job.seats}
 
     @app.post("/api/runs", status_code=201)
     def start_run(req: RunRequest):
@@ -263,17 +277,60 @@ def create_app(runs_dir: Path = DEFAULT_RUNS_DIR) -> FastAPI:
         do_export(d, tmp, bot=bot)
         return FileResponse(tmp, filename=tmp.name, media_type="application/zip")
 
+    # -- remote seats (humans, MCP) -------------------------------------------------
+
+    def seat_or_404(token: str):
+        seat = jobs.hub.get(token)
+        if seat is None:
+            raise HTTPException(404, "no such seat")
+        return seat
+
+    def seat_view(seat) -> dict:
+        return {"name": seat.name, "kind": seat.kind, "match_key": seat.match_key,
+                "time_limit_ms": seat.time_limit_ms, "finished": seat.finished,
+                "pending": seat.pending()}
+
+    @app.get("/api/seats")
+    def list_seats(kind: Optional[str] = None):
+        return [{**seat_view(s), "token": s.token, "pending": s.pending() is not None}
+                for s in jobs.hub.open_seats(kind)]
+
+    @app.get("/api/seats/{token}")
+    def get_seat(token: str):
+        seat = seat_or_404(token)
+        seat.joined = True
+        return seat_view(seat)
+
+    @app.post("/api/seats/{token}/act")
+    def seat_act(token: str, req: ActRequest):
+        seat = seat_or_404(token)
+        if not seat.submit(req.action, req.amount, note=req.note, decision_id=req.decision_id):
+            raise HTTPException(409, "it is not this seat's turn (or that decision has passed)")
+        return {"ok": True}
+
+    @app.get("/api/matches/{key:path}/turn")
+    def match_turn(key: str):
+        """Remote seats this match is waiting on (no private state)."""
+        out = []
+        for s in jobs.hub.for_match(key):
+            p = s.pending()
+            if p:
+                out.append({"bot": s.name, "kind": s.kind, "time_left_ms": p["time_left_ms"],
+                            "time_limit_ms": p["time_limit_ms"]})
+        return out
+
     # -- matches ---------------------------------------------------------------
 
     @app.get("/api/matches/{key:path}/events")
-    def match_events(key: str, start: int = Query(0, alias="from")):
+    def match_events(key: str, start: int = Query(0, alias="from"), as_: Optional[str] = Query(None, alias="as")):
         d = match_dir(key)
-        events = _read_lines(d / EVENTS_FILE, start)
+        events = [player_view(e, as_) for e in _read_lines(d / EVENTS_FILE, start)]
         return {"key": key, "from": start, "next": start + len(events), "events": events,
                 "status": match_status(key, d)}
 
     @app.get("/api/matches/{key:path}/stream")
-    async def match_stream(key: str, request: Request, start: int = Query(0, alias="from")):
+    async def match_stream(key: str, request: Request, start: int = Query(0, alias="from"),
+                           as_: Optional[str] = Query(None, alias="as")):
         d = match_dir(key)
 
         async def gen():
@@ -297,7 +354,8 @@ def create_app(runs_dir: Path = DEFAULT_RUNS_DIR) -> FastAPI:
                     if not line.strip():
                         continue
                     if n >= start:
-                        yield f"id: {n}\nevent: poker\ndata: {line}\n\n"
+                        out = json.dumps(player_view(json.loads(line), as_)) if as_ else line
+                        yield f"id: {n}\nevent: poker\ndata: {out}\n\n"
                     n += 1
                     if json.loads(line).get("type") == "match_end":
                         ended = True
@@ -328,6 +386,9 @@ def create_app(runs_dir: Path = DEFAULT_RUNS_DIR) -> FastAPI:
                 "match_start": first[0] if first else None,
                 "events": _count_lines(d / EVENTS_FILE)}
 
+    # -- MCP (LLM seats) ---------------------------------------------------------
+    app.router.routes.extend(mcp_app.routes)        # POST/GET /mcp
+
     # -- web UI ------------------------------------------------------------------
 
     if WEB_DIST.is_dir():
@@ -348,6 +409,23 @@ def create_app(runs_dir: Path = DEFAULT_RUNS_DIR) -> FastAPI:
                                  "yet (cd web && npm install && npm run build). API docs: /docs"})
 
     return app
+
+
+_PRIVATE_DECISION_FIELDS = ("state", "reply", "logs", "logs_truncated", "debug", "debug_error",
+                             "error_detail")
+
+
+def player_view(event: dict, player: Optional[str]) -> dict:
+    """An event as one player may see it: other players' hole cards are hidden
+    (showdown events still reveal them) and their decision details removed."""
+    if not player:
+        return event
+    t = event.get("type")
+    if t == "hand_start":
+        return {**event, "hole": {n: c for n, c in event["hole"].items() if n == player}}
+    if t == "decision" and event.get("bot") != player:
+        return {k: v for k, v in event.items() if k not in _PRIVATE_DECISION_FIELDS}
+    return event
 
 
 def _winner(kind, data):

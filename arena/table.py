@@ -23,7 +23,7 @@ import arena
 from arena import structures
 from arena.events import DEFAULT_RUNS_DIR, EventLog
 from arena.pacing import Cancelled, Pacer
-from arena.seats import BotSeat
+from arena.seats import BotSeat, Seat
 from arena.seeds import derive_seed, new_seed
 from engine.game import PokerEngine
 
@@ -373,10 +373,19 @@ def play_match(seats, config: MatchConfig, match_id: str, log, pacer=None) -> di
 
 
 def make_bot_seats(bot_specs, config, use_docker=None, seed=None):
+    """A seat per entry: BotSpecs become sandboxed BotSeats; ready-made Seat
+    objects (e.g. remote human/MCP seats) are used as they are."""
     seed = config.seed if seed is None else seed
-    return [BotSeat(spec, seed=derive_seed(seed, "bot", spec.name),
-                    time_limit_ms=config.time_limit_ms, use_docker=use_docker)
-            for spec in bot_specs]
+    seats = []
+    for spec in bot_specs:
+        if isinstance(spec, Seat):
+            seats.append(spec)
+        elif getattr(spec, "kind", None) in ("human", "mcp"):
+            raise ValueError(f"{spec.name}: {spec.kind} seats need a running server (poker serve)")
+        else:
+            seats.append(BotSeat(spec, seed=derive_seed(seed, "bot", spec.name),
+                                 time_limit_ms=config.time_limit_ms, use_docker=use_docker))
+    return seats
 
 
 def diagnostics(seats) -> dict:

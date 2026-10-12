@@ -9,7 +9,7 @@ description = "Run No-Limit Hold'em bot matches and tournaments"
 requires-python = ">=3.10,<3.11"
 license = { text = "MIT" }
 # eval7 must be installed first with --no-build-isolation (see `make install`).
-dependencies = ["eval7==0.1.7", "pyyaml>=6", "fastapi>=0.110", "uvicorn[standard]>=0.29"]
+dependencies = ["eval7==0.1.7", "pyyaml>=6", "fastapi>=0.110", "uvicorn[standard]>=0.29", "mcp>=2.3,<3"]
 
 [project.optional-dependencies]
 dev = ["pytest", "httpx"]

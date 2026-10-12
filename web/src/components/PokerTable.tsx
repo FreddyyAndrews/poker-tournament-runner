@@ -25,9 +25,11 @@ type Props = {
   state: TableState
   showAll: boolean         // spectator view: every hole card face up
   colorOf: (name: string) => string
+  me?: string              // playing as this seat: always show its cards
+  waitingFor?: string      // a human/LLM seat the table is waiting on
 }
 
-export function PokerTable({ state, showAll, colorOf }: Props) {
+export function PokerTable({ state, showAll, colorOf, me, waitingFor }: Props) {
   const players = Object.values(state.players)
   const count = Math.max(state.seatCount, 2)
   const winners = new Set(players.filter(p => p.won > 0).map(p => p.name))
@@ -55,9 +57,9 @@ export function PokerTable({ state, showAll, colorOf }: Props) {
       {players.map(p => {
         const pos = seatPos(p.seat, count)
         const betPos = toward(pos, 0.56)
-        const hidden = !showAll && !p.shown
+        const hidden = !showAll && !p.shown && p.name !== me
         const cls = ['seat',
-          state.acting === p.name ? 'acting' : '',
+          (waitingFor ? waitingFor === p.name : state.acting === p.name) ? 'acting' : '',
           p.folded ? 'folded' : '',
           p.busted || (!p.inHand && state.hand !== null) ? 'out' : '',
           winners.has(p.name) ? 'winner' : ''].filter(Boolean).join(' ')
@@ -69,6 +71,7 @@ export function PokerTable({ state, showAll, colorOf }: Props) {
               <div className="cards">
                 {p.inHand && p.cards && !(p.folded && hidden) && p.cards.map((c, i) =>
                   <Card key={i + c} card={c} back={hidden} />)}
+                {p.inHand && !p.cards && !p.folded && <><Card back /><Card back /></>}
               </div>
               <div className="plate">
                 <span className="swatch" style={{ background: colorOf(p.name) }} />

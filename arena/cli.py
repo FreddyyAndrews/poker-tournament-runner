@@ -8,6 +8,7 @@ from pathlib import Path
 from arena import bots as botlib
 from arena import formats, structures
 from arena.events import DEFAULT_RUNS_DIR, SUMMARY_FILE
+from arena.seats import Seat
 from arena.table import MatchConfig, run_match
 from arena.verify import verify_run
 
@@ -347,6 +348,91 @@ def cmd_bench(args):
         print(f"  change vs last: {diff:+.1f} bb/100")
 
 
+class TerminalSeat(Seat):
+    """A human seat played in the terminal (poker play). No time limit."""
+
+    kind = "human"
+
+    def __init__(self, name):
+        super().__init__(name, 10 * 60 * 1000)
+        self.decisions = 0
+
+    def summary(self):
+        return {"decisions": self.decisions, "timeouts": 0, "errors": 0}
+
+    def request_action(self, state):
+        import time as _t
+        from arena.server.mcp_server import describe, legal_actions
+        print("\n" + describe(state))
+        legal = legal_actions(state)
+        hint = "f=fold " if "fold" in legal else ""
+        hint += "x=check " if "check" in legal else f"c=call {legal['call']['amount']} "
+        if "raise" in legal:
+            hint += f"r <amount>=raise to ({legal['raise']['min_to']}..{legal['raise']['max_to']}) "
+        hint += "a=all-in"
+        t0 = _t.time()
+        while True:
+            try:
+                raw = input(f"[{hint}] > ").strip().lower()
+            except EOFError:
+                raw = "f"
+            parts = raw.split()
+            if not parts:
+                continue
+            word = {"f": "fold", "x": "check", "k": "check", "c": "call", "r": "raise", "a": "all_in",
+                    "allin": "all_in"}.get(parts[0], parts[0])
+            if word == "raise":
+                if len(parts) < 2 or not parts[1].isdigit():
+                    print("  raise needs an amount, e.g. r 600")
+                    continue
+                reply = {"action": "raise", "amount": int(parts[1])}
+            elif word in ("fold", "check", "call", "all_in"):
+                reply = {"action": word}
+            else:
+                print("  unknown action")
+                continue
+            self.decisions += 1
+            reply["think_ms"] = round((_t.time() - t0) * 1000, 1)
+            return reply
+
+
+def cmd_play(args):
+    """You against one or more bots, in the terminal."""
+    try:
+        specs = botlib.resolve_all(args.bots)
+        if args.freezeout:
+            mode, hands, blinds = "freezeout", args.max_hands, args.blinds or "standard"
+        else:
+            mode, hands, blinds = ("fixed" if args.fixed else "cash"), args.hands, args.blinds or "50/100"
+        config = MatchConfig(mode=mode, hands=hands, starting_stack=args.stack,
+                             structure=structures.parse(blinds, args.stack), seed=args.seed)
+    except ValueError as e:
+        _fail(str(e))
+    if args.name in [s.name for s in specs]:
+        _fail(f"{args.name!r} is also a bot name; pick another with --name")
+    me = TerminalSeat(args.name)
+
+    def show(e):
+        t = e["type"]
+        if t == "hand_start":
+            print(f"\n=== Hand {e['hand'] + 1}  blinds {e['blinds']['sb']}/{e['blinds']['bb']}  "
+                  f"your cards: {' '.join(e['hole'].get(args.name, []))} ===")
+        elif t == "decision" and e["bot"] != args.name:
+            a = e["applied"]
+            print(f"  {e['bot']}: {a['action'].replace('_', ' ')}" + (f" {a['amount']}" if a["amount"] else ""))
+        elif t == "deal":
+            print(f"  -- {e['street']}: {' '.join(e['board'])}")
+        elif t == "showdown":
+            for n, c in e["reveal"].items():
+                print(f"  {n} shows {' '.join(c)} ({e['ranks'].get(n)})")
+        elif t == "award":
+            print(f"  {e['bot']} wins {e['amount']}")
+
+    seats = [me, *specs] if not args.last else [*specs, me]
+    summary = run_match(seats, config, match_id=args.id, runs_dir=Path(args.out), listeners=[show])
+    _print_match(summary)
+
+
 def cmd_serve(args):
     import uvicorn
     from arena.server import create_app
@@ -357,7 +443,9 @@ def cmd_serve(args):
         import webbrowser
         threading.Timer(1.0, lambda: webbrowser.open(url)).start()
     # Only ever on this machine: bind to localhost.
-    uvicorn.run(create_app(Path(args.out)), host="127.0.0.1", port=args.port, log_level="warning")
+    print(f"LLM seats over MCP: claude mcp add --transport http poker {url}/mcp", file=sys.stderr)
+    uvicorn.run(create_app(Path(args.out), port=args.port), host="127.0.0.1", port=args.port,
+                log_level="warning")
 
 
 def cmd_bots(args):
@@ -458,6 +546,22 @@ def build_parser():
     bn.add_argument("--docker", action="store_true")
     bn.add_argument("--json", action="store_true")
     bn.set_defaults(func=cmd_bench)
+
+    pl = sub.add_parser("play", help="play against bots yourself, in the terminal",
+                        description="You take a seat against 1-8 bots. Cash hands by default.")
+    pl.add_argument("bots", nargs="+", help="opponents: names or paths")
+    pl.add_argument("--name", default="you", help="your name at the table (default: you)")
+    pl.add_argument("--hands", type=int, default=20, help="hands to play (default 20)")
+    pl.add_argument("--fixed", action="store_true", help="stacks carry over between hands")
+    pl.add_argument("--freezeout", action="store_true", help="play until one player has every chip")
+    pl.add_argument("--max-hands", type=int, default=500)
+    pl.add_argument("--stack", type=int, default=10_000)
+    pl.add_argument("--blinds", help="SB/BB[/ANTE] or a structure")
+    pl.add_argument("--seed", type=int)
+    pl.add_argument("--last", action="store_true", help="sit after the bots instead of in seat 1")
+    pl.add_argument("--id", help="match id (default: generated)")
+    pl.add_argument("--out", default=str(DEFAULT_RUNS_DIR))
+    pl.set_defaults(func=cmd_play)
 
     sv = sub.add_parser("serve", help="start the web UI and API on this machine")
     sv.add_argument("--port", type=int, default=8765)

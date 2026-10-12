@@ -133,6 +133,22 @@ For UI development run `poker serve` and `cd web && npm run dev` (Vite on port 5
 - **Jobs:** `POST /api/matches`, `POST /api/runs` (any format, `runs` > 1 for a series), `GET /api/jobs`, `POST /api/jobs/<id>/cancel`.
 - **Results:** `GET /api/runs`, `/api/runs/<id>`, `/api/matches/<key>`, `/api/matches/<key>/events`, `/api/verify/<id>`, `/api/export/<id>?bot=NAME`.
 
+### Playing against your bot: humans and LLMs
+
+A seat can be played by **you** or by **an LLM over MCP** instead of a bot. Both use the same seat: when it's their turn the table waits (30 s for humans and 120 s for LLMs by default), and if time runs out they check or fold, logged as a timeout just like a bot.
+
+- **In the browser:** on **New**, add **You** and some bots, then **Start and play**. You get an action bar with Fold / Check / Call, a raise slider with Min, 1/2 pot and Pot, All-in, and a countdown. Opponents' cards stay face down until showdown.
+- **In the terminal:** `poker play shark aggressor --hands 20` (add `--freezeout`, `--blinds`, `--stack`, `--seed`). Type `f`, `x`, `c`, `r 600`, `a`.
+- **An LLM over MCP:** `poker serve` also serves an MCP endpoint. Connect Claude Code (or any MCP client) with
+
+  ```bash
+  claude mcp add --transport http poker http://127.0.0.1:8765/mcp
+  ```
+
+  and ask it to play. Tools: `list_bots`, `start_match` (a seat for the LLM against chosen bots), `list_open_seats` (seats created on the New page with **An LLM**), `wait_for_turn` (returns a plain-English summary, the legal actions and the full state), `act` (with optional `reasoning`, saved as the decision's logs) and `get_match`. Spectators see who the table is waiting on and how long is left.
+
+Human and LLM seats play single tables (not tournaments). Their decisions are logged like a bot's, so these matches replay and verify too. API: `POST /api/matches` with bots like `"human:Ann"` / `"mcp:claude"` returns a token per seat; `GET /api/seats/<token>` shows the pending decision and `POST /api/seats/<token>/act` answers it.
+
 ### Docker sandbox
 
 To run bots in the Docker sandbox (`--docker` on `match`, `run` and `bench`; the competition setup), build the image first, and rebuild it whenever `sandbox/runner.py` changes:
@@ -287,7 +303,7 @@ Everything must be drivable by an agent, through the web UI (e.g. Claude in Chro
   - Think time is measured for every decision.
 - ✅ **Host hardening:** host-side timeouts, recovery when a bot process stalls or dies, stderr capture, and parallel warmup.
 - ✅ **Reproducible bots:** each bot's RNG is seeded from the match seed.
-- **Seat interface:** bots, humans and MCP clients share one seat interface, with decision times configurable per seat type (e.g. bot 2 s, human 30 s, LLM 120 s).
+- ✅ **Seat interface:** bots, humans and MCP clients share one seat interface, with decision times configurable per seat type (e.g. bot 2 s, human 30 s, LLM 120 s).
 
 ### Formats
 
@@ -365,7 +381,7 @@ docs/                    bot guide, organizer guide (GitHub Classroom), MCP, CLI
 1. ✅ **Engine + core:** engine patches, runner protocol v2, seats, tables, event logs, `poker match`, `poker verify`
 2. ✅ **Formats + metrics:** table, bracket, round-robin, MTT, series, stats, `poker run/results/runs/export/bench` (Swiss and stages after v1)
 3. **API + web UI:** ✅ server (jobs, pacing, live event streams); ✅ live/replay table with decision inspector; ✅ launcher; ✅ tournament dashboards
-4. **Remote seats:** human seats, MCP server, decision timers
+4. ✅ **Remote seats:** human seats (browser and terminal), MCP server, decision timers
 5. **Tournament UX:** ✅ run dashboards (bracket, round robin, multi-table, series); broadcast mode, bots page
 6. **Lab + docs:** Bot Lab, GitHub Classroom import, Docker validation, docs, end-to-end tests
 
