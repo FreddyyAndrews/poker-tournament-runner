@@ -8,6 +8,10 @@ const when = (t: number) => new Date(t * 1000).toLocaleString(undefined,
 export function StatusPill({ status }: { status: string }) {
   if (status === 'running' || status === 'queued') return <span className="pill live"><span className="dot" />Live</span>
   if (status === 'complete') return <span className="pill">Complete</span>
+  if (status === 'incomplete') return <span className="pill" title="Not running on this server and no final result">Didn't finish</span>
+  if (status === 'cancelled') return <span className="pill">Stopped</span>
+  if (status === 'error') return <span className="pill">Error</span>
+  if (status === 'pending') return <span className="pill">Not started</span>
   return <span className="pill">{status}</span>
 }
 

@@ -131,7 +131,7 @@ export type PokerEvent =
   | MatchStart | LevelEvent | HandStart | Post | Decision | Deal | Showdown | Award
   | HandEnd | Elimination | SeatChange | TableClosed | MatchEnd
 
-export type MatchStatus = 'running' | 'complete' | 'incomplete'
+export type MatchStatus = 'running' | 'complete' | 'incomplete' | 'cancelled' | 'error' | 'pending'
 
 export type MatchMeta = {
   key: string

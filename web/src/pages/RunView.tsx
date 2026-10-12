@@ -19,7 +19,7 @@ export function RunView({ runId }: { runId: string }) {
     const load = () => api.run(runId).then(r => {
       if (!alive) return
       setRun(r)
-      const active = (r.job && ['queued', 'running'].includes(r.job.status)) || r.data?.status === 'running'
+      const active = r.status === 'running'
       if (active) timer = window.setTimeout(load, 1500)
     }).catch(e => alive && setError(String(e)))
     load()
@@ -31,11 +31,12 @@ export function RunView({ runId }: { runId: string }) {
 
   const d = run.data ?? {}
   const p = run.progress
-  const status = run.job?.status ?? d.status ?? 'complete'
-  const active = ['queued', 'running'].includes(status)
+  // One rule, decided by the server: 'running' only while its job is running.
+  const status: string = run.status ?? 'incomplete'
+  const active = status === 'running'
   const format = d.format ?? run.job?.params?.format
   const cfg = d.config ?? {}
-  const live: string[] = (run.job?.live ?? []).filter(() => format !== 'mtt')
+  const live: string[] = active ? (run.job?.live ?? []).filter(() => format !== 'mtt') : []
   const isSeries = run.kind === 'series'
   const runsTotal = d.runs ?? run.job?.params?.runs
   const runsDone = p?.runs_done ?? run.job?.runs_done ?? 0
