@@ -72,7 +72,8 @@ def bucket(price):
 class Opp:
     def __init__(self):
         self.ftb = {k: [[0, 0] for _ in range(NB)] for k in PRIOR}   # [folds, faced]
-        self.raise_vs_bet = [0, 0]                     # [raises, faced bets postflop]
+        self.rvb = {True: [0, 0], False: [0, 0]}      # pre/post: [raises, continues] when facing a bet
+        self.shoves = {True: [0, 0], False: [0, 0]}   # pre/post: [all-ins, raises]
         self.bet_vs_check = [0, 0]                     # [bets, chances postflop]
         self.hands = 0
         self.vpip = 0
@@ -98,15 +99,21 @@ class Opp:
     def pfr_rate(self, prior=0.25):
         return (4 * prior + self.pfr) / (4 + self.hands)
 
-    def raise_rate(self):
-        r, n = self.raise_vs_bet
-        return (2 * 0.12 + r) / (2 + n)
+    def raise_rate(self, pre):
+        r, n = self.rvb[pre]
+        return (2 * 0.15 + r) / (2 + n)
+
+    def shove_rate(self, pre):
+        a, n = self.shoves[pre]
+        return (1 * 0.2 + a) / (1 + n)
 
     def summary(self):
         return {
             "hands": self.hands,
             "vpip": round(self.vpip_rate(), 2),
             "pfr": round(self.pfr_rate(), 2),
+            "raise_vs_bet": [round(self.raise_rate(True), 2), round(self.raise_rate(False), 2)],
+            "shove": [round(self.shove_rate(True), 2), round(self.shove_rate(False), 2)],
             "ftb": {"%s%s" % ("pre" if k[0] else "post", "_aggr" if k[1] else ""):
                     [round(self.fold_prob(p, *k), 2) for p in (0.1, 0.2, 0.26, 0.32, 0.38, 0.45, 0.55, 0.7)]
                     for k in PRIOR},
@@ -198,6 +205,7 @@ class Replay:
             if learn:
                 if owed > 0:
                     t[bucket(price)][1] += 1
+                    o.rvb[pre][1] += 1
                 if pre and bot not in self.pre_counted:
                     self.pre_counted.add(bot)
                     o.vpip += 1
@@ -210,11 +218,14 @@ class Replay:
             if learn:
                 if owed > 0:
                     t[bucket(price)][1] += 1
-                    if not pre:
-                        o.raise_vs_bet[1] += 1
-                        if amt > self.current_bet:
-                            o.raise_vs_bet[0] += 1
-                elif not pre:
+                    o.rvb[pre][1] += 1
+                    if amt > self.current_bet:
+                        o.rvb[pre][0] += 1
+                if amt > self.current_bet:
+                    o.shoves[pre][1] += 1
+                    if act == "all_in":
+                        o.shoves[pre][0] += 1
+                if owed == 0 and not pre:
                     o.bet_vs_check[1] += 1
                     o.bet_vs_check[0] += 1
                 if pre and bot not in self.pre_counted:
@@ -484,12 +495,18 @@ def _decide(gs, t0):
         pot_after = pot + add
         F = 1.0
         max_owed = 0
-        cont = []
+        cont, rspecs = [], []
+        rprob = 0.0
+        raise_tu = None
         for p, q in zip(live, ranges):
             o = OPPS.get(p["bot_id"])
-            opp_owed = min(r, p["bet_this_street"] + p["stack"]) - p["bet_this_street"]
+            their_max = p["bet_this_street"] + p["stack"]
+            opp_owed = min(r, their_max) - p["bet_this_street"]
             if p["state"] != "active" or opp_owed <= 0:
+                # already all in: cannot fold, cannot raise
+                F = 0.0
                 cont.append((q, 0.0))
+                rspecs.append((q, 0.0))
                 continue
             price = opp_owed / pot_after
             ag = p["bot_id"] in aggr_now
@@ -497,13 +514,28 @@ def _decide(gs, t0):
             F *= f
             max_owed = max(max_owed, opp_owed)
             cont.append((q, f))
+            # If they raise, they hold the top part of their continuing range.
+            rr = o.raise_rate(pre) if o else 0.15
+            if their_max <= r:
+                rr = 0.0
+            rspecs.append((q, min(0.97, 1 - (1 - f) * rr)))
+            if rr > rprob:
+                rprob = rr
+                shove = (o.shove_rate(pre) if o else 0.2) > 0.5
+                opp_to = their_max if shove else min(their_max, 3 * r)
+                T = min(my_max, opp_to) - my_bet          # my total to call their raise
+                U = min(opp_to, their_max) - p["bet_this_street"]
+                raise_tu = (T, U)
         e_call = eq_vs(cont) if F < 1 else e
-        ev = F * pot + (1 - F) * (e_call * (pot + max_owed) - (1 - e_call) * add)
+        ev_cont = e_call * (pot + max_owed) - (1 - e_call) * add
+        if rprob > 0 and raise_tu is not None:
+            T, U = raise_tu
+            e_r = eq_vs(rspecs)
+            ev_raised = max(-add, e_r * (pot + U) - (1 - e_r) * T)
+        else:
+            ev_raised = -add
+        ev = F * pot + (1 - F) * ((1 - rprob) * ev_cont + rprob * ev_raised)
         ev -= RISK * add + RISK * max(0, add - pot)
-        # Opponents who raise a lot make medium-strength bets costly.
-        ragg = max((OPPS[p["bot_id"]].raise_rate() for p in aggressors if p["bot_id"] in OPPS), default=0.12)
-        if e_call < 0.6 and not pre:
-            ev -= (1 - F) * ragg * add * (0.6 - e_call)
         key = "all_in" if r >= my_max else "raise_%d" % r
         evs[key] = ev
         if best_r is None or ev > evs[best_r[0]]:
