@@ -12,7 +12,7 @@ This directory is the maintained source for verifying what users do with the Pok
 ## Driving conventions
 
 - UI: Playwright through the helpers in `$S` or `web/scripts/screenshot.mjs`, using `data-testid` handles and routes. Never use coordinates.
-- CLI: `.venv/bin/poker ...` with `--out data/verify/$RUN/runs` for anything that writes matches, so results stay in this run.
+- CLI: `poker match` and `poker run` run on a server. Point them at this run's server with `--server http://127.0.0.1:$(cat data/verify/$RUN/port)` (or `export POKER_SERVER=http://127.0.0.1:<port>`), so results land in `data/verify/$RUN/runs`. `poker play` and `--local` runs work in-process; give them `--out data/verify/$RUN/runs`.
 - MCP: `mcp.client.Client("http://127.0.0.1:<port>/mcp")` from `.venv/bin/python`, or a real MCP client pointed at the run's port.
 - Bots created for a run are named `verify_*` (created with `$S/new_bot.sh`) and removed by `$S/cleanup.sh`.
 

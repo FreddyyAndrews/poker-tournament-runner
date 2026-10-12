@@ -37,7 +37,7 @@ def _say(args, msg):
 
 def cmd_match(args):
     try:
-        specs = botlib.resolve_all(args.bots, names=args.name)
+        specs = botlib.resolve_all(args.bots, names=args.name, allow_remote=not args.local)
         if args.freezeout:
             mode, hands = "freezeout", args.max_hands
             structure = structures.parse(args.blinds or "standard", args.stack)
@@ -51,13 +51,101 @@ def cmd_match(args):
         _fail(str(e), args.json)
 
     live = _live_printer() if args.verbose and not args.json else None
-    summary = run_match(specs, config, match_id=args.id, runs_dir=Path(args.out),
-                        use_docker=True if args.docker else None,
-                        listeners=[live] if live else [], pace_ms=args.pace)
+    if args.local:
+        summary = run_match(specs, config, match_id=args.id, runs_dir=Path(args.out or DEFAULT_RUNS_DIR),
+                            use_docker=True if args.docker else None,
+                            listeners=[live] if live else [], pace_ms=args.pace)
+    else:
+        summary = _match_on_server(args, live)
     if args.json:
         _print_json(summary)
     else:
         _print_match(summary)
+    if str(summary.get("stopped", "")).startswith(("error", "cancelled")):
+        sys.exit(1)
+
+
+# ---------------------------------------------------------------------------
+# Running on the server (the default for match and run)
+# ---------------------------------------------------------------------------
+
+def _server(args):
+    """Connect to the server, checking --out against where it writes."""
+    from arena.client import Server, ServerUnavailable
+    server = Server(args.server)
+    try:
+        health = server.health()
+    except ServerUnavailable as e:
+        _fail(f"{e}. Start one with `poker serve`, or use --local to run in this process.", args.json)
+    if args.out and Path(args.out).resolve() != Path(health["runs_dir"]).resolve():
+        _fail(f"the server at {server.url} writes results to {health['runs_dir']}; "
+              f"--out only applies with --local", args.json)
+    return server
+
+
+def _server_bots(specs):
+    """Bot specs as the server should see them: names stay names, paths become
+    absolute (the server may run from another directory)."""
+    out = []
+    for spec in specs:
+        p = Path(spec).expanduser()
+        out.append(str(p.resolve()) if not botlib.remote_kind(spec) and p.exists() else spec)
+    return out
+
+
+def _follow_job(server, job_id, args):
+    """Wait for a job; Ctrl+C cancels it on the server. Returns the final job."""
+    import time as _t
+    try:
+        while True:
+            job = server.job(job_id)
+            if job["status"] not in ("queued", "running"):
+                return job
+            _t.sleep(0.25)
+    except KeyboardInterrupt:
+        server.cancel(job_id)
+        _say(args, "\nCancelling on the server...")
+        while server.job(job_id)["status"] in ("queued", "running"):
+            _t.sleep(0.2)
+        return server.job(job_id)
+
+
+def _match_on_server(args, live):
+    import time as _t
+    from arena.client import ApiError
+    server = _server(args)
+    body = {"bots": _server_bots(args.bots), "names": args.name,
+            "mode": "freezeout" if args.freezeout else ("cash" if args.cash else "fixed"),
+            "hands": args.max_hands if args.freezeout else args.hands,
+            "starting_stack": args.stack, "blinds": args.blinds, "seed": args.seed,
+            "time_limit_ms": args.time_limit_ms, "docker": bool(args.docker),
+            "pace_ms": args.pace, "id": args.id}
+    try:
+        started = server.start_match({k: v for k, v in body.items() if v is not None})
+    except ApiError as e:
+        _fail(e.detail, args.json)
+    key = started["match_key"]
+    _say(args, f"Playing on {server.url}  (watch: {server.watch_url(key=key)})")
+    for seat in started.get("seats", []):
+        how = ("take it with the MCP tools (wait_for_turn / act)" if seat["kind"] == "mcp"
+               else f"play it at {server.watch_url(key=key)}?seat={seat['token']}&as={seat['name']}")
+        # always shown (even with --json): without the token nobody can take the seat
+        print(f"  {seat['kind']} seat {seat['name']}: token {seat['token']} - {how}",
+              file=sys.stderr, flush=True)
+    try:
+        for event in server.stream(key):
+            if live:
+                live(event)
+    except KeyboardInterrupt:
+        server.cancel(key)
+        _say(args, "\nCancelling on the server...")
+    job = _follow_job(server, key, args)
+    for _ in range(100):                           # the summary is written just after match_end
+        meta = server.match(key)
+        if meta.get("summary"):
+            return meta["summary"]
+        _t.sleep(0.1)
+    _fail(f"match {key} ended without results ({job['status']}: {job.get('error')})", args.json, code=1)
 
 
 def _live_printer():
@@ -76,6 +164,10 @@ def _live_printer():
 
 def _print_match(s):
     cfg = s["config"]
+    if not s.get("results"):
+        print(f"\nMatch {s['match_id']} stopped ({s['stopped']}) before it produced results.")
+        print(f"Log so far: {s['run_dir']}")
+        return
     print(f"\nMatch {s['match_id']}  ({cfg['mode']}, {s['hands']} hands, seed {s['seed']}, "
           f"{s['duration_s']}s)")
     print(f"Ended: {s['stopped']}\n")
@@ -122,6 +214,16 @@ def cmd_run(args):
     runs = opts.get("runs") or 1
     workers = opts.get("workers") or 1
     use_docker = True if opts.get("docker") else None
+    if not args.local:
+        result = _run_on_server(args, cfg, runs, workers, use_docker)
+        if args.json:
+            _print_json(result)
+        else:
+            _print_result(result)
+        if result.get("status") != "complete":
+            sys.exit(1)
+        return
+    args.out = args.out or str(DEFAULT_RUNS_DIR)
     try:
         if runs > 1:
             from arena.series import run_series
@@ -142,6 +244,49 @@ def cmd_run(args):
         _print_json(result)
     else:
         _print_result(result)
+
+
+def _run_on_server(args, cfg, runs, workers, use_docker):
+    from arena.client import ApiError
+    server = _server(args)
+    body = {**{k: v for k, v in cfg.to_dict().items() if v is not None},
+            "bots": _server_bots(cfg.bots), "runs": runs, "workers": workers,
+            "docker": bool(use_docker), "pace_ms": args.pace, "id": args.id}
+    try:
+        started = server.start_run({k: v for k, v in body.items() if v is not None})
+    except ApiError as e:
+        _fail(e.detail, args.json)
+    run_id = started["run_id"]
+    _say(args, f"Running on {server.url}  (watch: {server.watch_url(run_id=run_id)})")
+
+    seen = {"matches_done": 0, "runs_done": 0}
+
+    def progress(job):
+        for field, label in (("matches_done", "matches"), ("runs_done", "runs")):
+            if job.get(field, 0) > seen[field]:
+                seen[field] = job[field]
+                _say(args, f"  {job[field]}{f'/{runs}' if field == 'runs_done' else ''} {label} done")
+
+    import time as _t
+    try:
+        while True:
+            job = server.job(run_id)
+            progress(job)
+            if job["status"] not in ("queued", "running"):
+                break
+            _t.sleep(0.3)
+    except KeyboardInterrupt:
+        server.cancel(run_id)
+        _say(args, "\nCancelling on the server...")
+        _follow_job(server, run_id, args)
+    data = server.run(run_id)
+    result = data.get("data") or {}
+    result.setdefault("status", data.get("status"))
+    if data.get("status") != "complete":
+        job = server.job(run_id)
+        _fail(f"run {run_id} {data.get('status')}" + (f": {job['error']}" if job.get("error") else ""),
+              args.json, code=1)
+    return result
 
 
 def _print_run(r):
@@ -469,7 +614,12 @@ def _add_common_match_flags(p, run=False):
                    help="slow play down for watching: about MS milliseconds per action "
                         "(default 0 = full speed; ignored for series)")
     p.add_argument("--id", help="folder name for the results (default: generated)")
-    p.add_argument("--out", default=str(DEFAULT_RUNS_DIR), help="results directory (default data/runs)")
+    p.add_argument("--server", help="poker server to run on (default $POKER_SERVER or "
+                                    "http://127.0.0.1:8765; start one with `poker serve`)")
+    p.add_argument("--local", action="store_true",
+                   help="run in this process instead of on the server (no live view, no "
+                        "web cancel; for tests, CI and offline use)")
+    p.add_argument("--out", help="with --local: results directory (default data/runs)")
     p.add_argument("--json", action="store_true", help="print the result as JSON")
 
 
@@ -478,7 +628,8 @@ def build_parser():
     sub = p.add_subparsers(dest="command", required=True)
 
     m = sub.add_parser("match", help="play one table (2-9 bots)",
-                       description="Play one table. Bots are names from my_bots/ or bots/, or paths.")
+                       description="Play one table. Bots are names from my_bots/ or bots/, or paths. "
+                                   "Runs on the poker server (watch it live in the web UI) unless --local.")
     m.add_argument("bots", nargs="+", help="2-9 bots: names (shark) or paths (my_bots/x/bot.py)")
     m.add_argument("--name", action="append", help="display name for each bot, in order (repeatable)")
     m.add_argument("--hands", type=int, default=100, help="hands to play (default 100)")
@@ -495,7 +646,8 @@ def build_parser():
 
     r = sub.add_parser("run", help="run a tournament (optionally many times)",
                        description="Run a tournament from a YAML/JSON config and/or flags. "
-                                   "Formats: " + ", ".join(formats.FORMATS) + ".")
+                                   "Formats: " + ", ".join(formats.FORMATS) + ". "
+                                   "Runs on the poker server unless --local.")
     r.add_argument("config", nargs="?", help="config file (see configs/)")
     r.add_argument("--format", choices=formats.FORMATS)
     r.add_argument("--bots", nargs="+", help="bots (names or paths)")

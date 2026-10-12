@@ -44,7 +44,10 @@ make test           # all tests
 
 ### Playing matches
 
+`poker match` and `poker run` run on the poker server, so start one first in another terminal (`poker serve`, see [Web UI](#web-ui-and-live-viewing)). The CLI sends the match to it, follows along and prints the results; Ctrl+C cancels it on the server. To run in-process without a server (tests, CI, offline), add `--local`; those matches never show as live.
+
 ```bash
+poker serve                                       # in another terminal
 poker bots                                        # list bots in my_bots/ and bots/
 poker match shark aggressor --hands 500           # heads-up, 500 hands at 50/100
 poker match shark aggressor mathematician template --freezeout --blinds turbo -v
@@ -53,7 +56,8 @@ poker match my_bots/mybot shark --cash --hands 1000   # every hand starts from t
 poker verify data/runs/<match-id>                 # replay the log and check it
 ```
 
-- **Bots** are names from `my_bots/` or `bots/`, or paths to a `bot.py`, a bot folder or a `bot.zip`. 2–9 per table.
+- **Server:** `--server URL` (or `$POKER_SERVER`) picks the server; the default is `http://127.0.0.1:8765`. Results go to that server's runs directory; `--out` only applies with `--local`.
+- **Bots** are names from `my_bots/` or `bots/`, or paths to a `bot.py`, a bot folder or a `bot.zip`. 2–9 per table. `mcp:Name` or `human:Name` adds a seat for an LLM or a person; the CLI prints its token.
 - **Fixed mode** (default) plays `--hands` hands with stacks carrying over. **`--cash`** plays `--hands` hands with every hand starting from the starting stack (nobody busts; best for measuring bb/100). **`--freezeout`** plays until one bot has every chip, with blinds rising by hand count (`--max-hands` caps it).
 - **`--blinds`** takes flat blinds `SB/BB[/ANTE]` or a structure: `turbo` (10 hands per level), `standard` (20) or `slow` (40). Structures scale with `--stack`.
 - **Seats are fixed** for the whole match, and the button moves to the next occupied seat each hand.

@@ -297,7 +297,7 @@ def run_cli(*args):
 
 
 def test_cli_match_and_verify_json(tmp_path):
-    out = run_cli("match", "shark", "aggressor", "--hands", "20", "--seed", "4",
+    out = run_cli("match", "--local", "shark", "aggressor", "--hands", "20", "--seed", "4",
                   "--blinds", "25/50", "--stack", "5000", "--id", "cli", "--out", str(tmp_path),
                   "--json")
     assert out.returncode == 0, out.stderr
@@ -309,7 +309,7 @@ def test_cli_match_and_verify_json(tmp_path):
 
 
 def test_cli_errors_are_clean(tmp_path):
-    out = run_cli("match", "shark", "nope_not_a_bot", "--out", str(tmp_path))
+    out = run_cli("match", "--local", "shark", "nope_not_a_bot", "--out", str(tmp_path))
     assert out.returncode == 2 and "not found" in out.stderr
     out = run_cli("verify", str(tmp_path / "missing"))
     assert out.returncode == 2 and "No match log" in out.stderr

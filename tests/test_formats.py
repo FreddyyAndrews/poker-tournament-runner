@@ -286,7 +286,7 @@ def run_cli(*args):
 
 
 def test_cli_run_results_verify(tmp_path):
-    out = run_cli("run", "configs/bracket.yaml", "--blinds", "turbo", "--seed", "3",
+    out = run_cli("run", "--local", "configs/bracket.yaml", "--blinds", "turbo", "--seed", "3",
                   "--id", "b", "--out", str(tmp_path), "--json")
     assert out.returncode == 0, out.stderr
     result = json.loads(out.stdout)
@@ -297,7 +297,7 @@ def test_cli_run_results_verify(tmp_path):
 
 
 def test_cli_run_series_from_flags(tmp_path):
-    out = run_cli("run", "--format", "table", "--bots", "shark", "aggressor", "--hands", "20",
+    out = run_cli("run", "--local", "--format", "table", "--bots", "shark", "aggressor", "--hands", "20",
                   "--runs", "3", "--workers", "3", "--seed", "1", "--id", "s",
                   "--out", str(tmp_path), "--json")
     assert out.returncode == 0, out.stderr
