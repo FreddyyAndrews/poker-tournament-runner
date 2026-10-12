@@ -170,6 +170,11 @@ def opp(name):
 
 def _absorb_hand(hand_num, actions, me):
     """Fold one finished hand's actions into opponent stats."""
+    # newer runners include blind/ante posts in match_action_log; older ones don't
+    logged_posts = [a for a in actions if a["action"] in POSTS]
+    actions = [a for a in actions if a["action"] not in POSTS]
+    saved_posts = HAND_POSTS.pop(hand_num, None)
+    posts = logged_posts or saved_posts
     first = set()
     for a in actions:
         n, act = a["bot_id"], a["action"]
@@ -188,8 +193,7 @@ def _absorb_hand(hand_num, actions, me):
             if act == "raise":
                 o.pfr += 1
     # postflop tendencies, from the hand split into streets (needs the blind posts)
-    posts = HAND_POSTS.pop(hand_num, None)
-    if posts is not None:
+    if posts:
         for street in split_streets(posts + actions)[1:]:
             for a, facing in street:
                 if a["bot_id"] == me:
@@ -228,7 +232,7 @@ def _absorb_hand(hand_num, actions, me):
 
 
 POSTS = ("small_blind", "big_blind", "ante")
-HAND_POSTS = {}   # hand_num -> blind/ante posts (match_action_log leaves them out)
+HAND_POSTS = {}   # hand_num -> blind/ante posts (older runners leave them out of match_action_log)
 
 
 def split_streets(actions, all_in_at=()):
