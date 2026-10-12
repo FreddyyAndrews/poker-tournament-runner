@@ -96,7 +96,9 @@ export function MatchView({ matchKey, seatToken, playAs }: { matchKey: string; s
           <span className="title" data-testid="match-title">{title}</span>
           {running ? <span className="pill live" data-testid="status"><span className="dot" />Live</span>
             : status === 'complete' ? <span className="pill" data-testid="status">Complete</span>
-            : status === 'incomplete' ? <span className="pill" data-testid="status">Incomplete</span> : null}
+            : status === 'incomplete' ? <span className="pill" data-testid="status">Didn't finish</span>
+            : status === 'cancelled' ? <span className="pill" data-testid="status">Stopped</span>
+            : status === 'error' ? <span className="pill" data-testid="status">Error</span> : null}
           {cfg && (
             <span className="facts num">
               <span>{cfg.mode === 'freezeout' ? 'Freezeout' : cfg.mode === 'cash' ? `Cash, ${cfg.hands} hands` : `${cfg.hands} hands`}</span>

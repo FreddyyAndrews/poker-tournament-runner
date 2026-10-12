@@ -16,6 +16,7 @@ from arena import bots as botlib
 from arena import formats
 from arena.events import EVENTS_FILE, SUMMARY_FILE
 from arena.formats import bracket, round_robin
+from arena.server import status as status_rule
 from arena.seeds import derive_seed
 
 
@@ -24,34 +25,34 @@ def _summary(match_dir: Path):
     return json.loads(f.read_text()) if f.is_file() else None
 
 
-def _status(match_dir: Path, summary) -> str:
-    if summary is not None:
-        return "complete" if summary.get("stopped") not in ("cancelled", "error") else summary["stopped"]
-    return "running" if (match_dir / EVENTS_FILE).is_file() else "pending"
+def _status(match_dir: Path, active: bool) -> str:
+    return status_rule.match_status(match_dir, active)
 
 
 def _record(summary, **extra):
     return formats.match_record(summary, **extra) if summary and summary.get("results") else None
 
 
-def run_progress(run_dir: Path, run: dict, run_id: str):
+def run_progress(run_dir: Path, run: dict, run_id: str, active: bool = False):
+    """`active`: is this run's job running on the server right now? Only then
+    can any of its matches or tables be live (see status.py)."""
     fmt = run.get("format")
     try:
         cfg = formats.RunConfig(**run["config"])
     except Exception:
         return None
     if fmt == "bracket":
-        return bracket_progress(run_dir, cfg, run_id)
+        return bracket_progress(run_dir, cfg, run_id, active)
     if fmt == "round_robin":
-        return round_robin_progress(run_dir, cfg, run_id)
+        return round_robin_progress(run_dir, cfg, run_id, active)
     if fmt == "mtt":
-        return mtt_progress(run_dir, run_id)
+        return mtt_progress(run_dir, run_id, active)
     return None
 
 
 # ---------------------------------------------------------------------------
 
-def bracket_progress(run_dir: Path, cfg, run_id: str) -> dict:
+def bracket_progress(run_dir: Path, cfg, run_id: str, active: bool = False) -> dict:
     seeds = {name: i + 1 for i, name in enumerate(bracket.seeded_entrants(cfg))}
     # entries are (name or None, decided)
     current = [(n, True) for n in bracket.first_round_slots(cfg)]
@@ -70,7 +71,7 @@ def bracket_progress(run_dir: Path, cfg, run_id: str) -> dict:
             elif a and b:
                 mdir = run_dir / "matches" / mid
                 summary = _summary(mdir)
-                tie["status"] = _status(mdir, summary)
+                tie["status"] = _status(mdir, active)
                 rec = _record(summary, players=[a, b])
                 if rec:
                     w, _, how = formats.two_player_winner(rec, derive_seed(cfg.seed, "tiebreak", mid))
@@ -95,7 +96,7 @@ def bracket_progress(run_dir: Path, cfg, run_id: str) -> dict:
 
 # ---------------------------------------------------------------------------
 
-def round_robin_progress(run_dir: Path, cfg, run_id: str) -> dict:
+def round_robin_progress(run_dir: Path, cfg, run_id: str, active: bool = False) -> dict:
     names = [s.name for s in botlib.resolve_all(cfg.bots, names=cfg.names)]
     pairings, records = [], []
     for a, b in combinations(names, 2):
@@ -109,7 +110,7 @@ def round_robin_progress(run_dir: Path, cfg, run_id: str) -> dict:
             if rec:
                 records.append(rec)
             legs.append({"match_id": mid, "key": f"{run_id}/matches/{mid}", "leg": leg,
-                         "status": _status(mdir, summary),
+                         "status": _status(mdir, active),
                          "delta": {r["bot"]: r["delta"] for r in rec["results"]} if rec else None})
         done = all(l["status"] == "complete" for l in legs)
         delta = {a: sum((l["delta"] or {}).get(a, 0) for l in legs),
@@ -130,7 +131,7 @@ def round_robin_progress(run_dir: Path, cfg, run_id: str) -> dict:
 
 # ---------------------------------------------------------------------------
 
-def mtt_progress(run_dir: Path, run_id: str) -> dict:
+def mtt_progress(run_dir: Path, run_id: str, active: bool = False) -> dict:
     tables_dir = run_dir / "matches" / "mtt" / "tables"
     tables, eliminations = [], []
     if tables_dir.is_dir():
@@ -170,7 +171,7 @@ def mtt_progress(run_dir: Path, run_id: str) -> dict:
                     ended = e.get("stopped")
             tables.append({
                 "table": int(d.name[1:]), "key": f"{run_id}/matches/mtt/tables/{d.name}",
-                "closed": closed, "ended": ended, "hand": hand, "level": level, "blinds": blinds,
+                "status": _status(d, active), "closed": closed, "ended": ended, "hand": hand, "level": level, "blinds": blinds,
                 "button": button,
                 "players": sorted(({"bot": n, **v} for n, v in seats.items()), key=lambda p: p["seat"]),
             })

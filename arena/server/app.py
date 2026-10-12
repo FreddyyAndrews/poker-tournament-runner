@@ -29,6 +29,7 @@ from arena.events import DEFAULT_RUNS_DIR, EVENTS_FILE, SUMMARY_FILE
 from arena.pacing import DEFAULT_PACE_MS
 from arena.server.jobs import JobManager
 from arena.server.mcp_server import build_mcp
+from arena.server import status as status_rule
 from arena.server.progress import run_progress, series_progress
 from arena.series import SERIES_FILE
 
@@ -114,11 +115,7 @@ def create_app(runs_dir: Path = DEFAULT_RUNS_DIR, port: int = 8765) -> FastAPI:
         return d
 
     def match_status(key: str, d: Path) -> str:
-        if (d / SUMMARY_FILE).is_file() or _last_type(d / EVENTS_FILE) == "match_end":
-            return "complete"
-        if jobs.is_active(key.split("/")[0]):
-            return "running"
-        return "incomplete"
+        return status_rule.match_status(d, active=jobs.is_active(key.split("/")[0]))
 
     def read_json(p: Path):
         return json.loads(p.read_text())
@@ -216,10 +213,9 @@ def create_app(runs_dir: Path = DEFAULT_RUNS_DIR, port: int = 8765) -> FastAPI:
                 if kind == "match" and not data.get("seats"):
                     first = _read_lines(d / EVENTS_FILE, 0, limit=1)
                     if first:
-                        data = {"seats": first[0].get("seats", []), "status": "running"}
-                job = jobs.get(d.name)
-                status = (job.status if job else None) or data.get("status") or \
-                    ("complete" if f else "incomplete")
+                        data = {"seats": first[0].get("seats", [])}
+                status = (match_status(d.name, d) if kind == "match"
+                          else status_rule.run_status(d, active=jobs.is_active(d.name)))
                 rows.append({
                     "id": d.name, "kind": kind, "status": status,
                     "format": data.get("format") or ("table" if kind == "match" else None),
@@ -239,13 +235,16 @@ def create_app(runs_dir: Path = DEFAULT_RUNS_DIR, port: int = 8765) -> FastAPI:
         if kind is None and not job:
             raise HTTPException(404, f"no run {run_id!r}")
         data = read_json(f) if f else {}
-        out = {"id": run_id, "kind": kind or (job.kind if job else None), "data": data,
-               "job": job.to_dict() if job else None}
+        active = jobs.is_active(run_id.split("/")[0])
+        status = (match_status(run_id, d) if kind == "match"
+                  else status_rule.run_status(d, active=active))
+        out = {"id": run_id, "kind": kind or (job.kind if job else None), "status": status,
+               "data": data, "job": job.to_dict() if job else None}
         try:
             if kind == "series":
                 out["progress"] = series_progress(d, data)
             elif data.get("config"):
-                out["progress"] = run_progress(d, data, run_id)
+                out["progress"] = run_progress(d, data, run_id, active=active)
         except Exception as e:          # progress is a convenience; never break the page
             out["progress_error"] = repr(e)
         if kind == "run" or (job and job.kind == "run"):
@@ -433,7 +432,8 @@ def _winner(kind, data):
         agg = data.get("aggregate") or []
         return agg[0]["bot"] if agg else None
     rows = data.get("standings") or data.get("results") or []
-    return rows[0]["bot"] if rows and data.get("status", "complete") == "complete" else None
+    return rows[0]["bot"] if rows and data.get("status", "complete") == "complete" \
+        and data.get("stopped") not in ("cancelled",) else None
 
 
 def _read_lines(path: Path, start: int = 0, limit: int = None) -> list:
@@ -448,21 +448,6 @@ def _read_lines(path: Path, start: int = 0, limit: int = None) -> list:
             if limit and len(out) >= limit:
                 break
     return out
-
-
-def _last_type(path: Path):
-    """Type of the last complete event in a log (cheap: reads the tail)."""
-    if not path.is_file():
-        return None
-    with open(path, "rb") as fh:
-        fh.seek(0, 2)
-        size = fh.tell()
-        fh.seek(max(0, size - 4096))
-        lines = [l for l in fh.read().split(b"\n") if l.strip()]
-    try:
-        return json.loads(lines[-1]).get("type") if lines else None
-    except ValueError:
-        return None
 
 
 def _count_lines(path: Path) -> int:

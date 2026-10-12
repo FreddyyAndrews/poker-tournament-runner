@@ -118,8 +118,9 @@ export function MttView({ p }: { p: any }) {
             <div key={t.table} className={'mtt-table' + (t.closed ? ' closed' : '')} data-testid="mtt-table">
               <div className="head">
                 <span className="t">{open.length === 1 && !t.closed ? 'Final table' : `Table ${t.table}`}</span>
-                {!t.closed && !t.ended && <Live />}
+                {t.status === 'running' && <Live />}
                 {t.closed && <span className="pill">Closed</span>}
+                {t.status === 'incomplete' && <span className="pill">Didn't finish</span>}
                 <span className="spacer" />
                 <span className="muted num">{t.hand !== null ? `hand ${t.hand + 1}` : ''}
                   {t.blinds ? ` · ${fmt(t.blinds.sb)}/${fmt(t.blinds.bb)}` : ''}</span>
@@ -135,7 +136,7 @@ export function MttView({ p }: { p: any }) {
                 {t.players.length === 0 && <div className="muted">empty</div>}
               </div>
               <button className="small" onClick={() => go(t.key)} data-testid="watch-table">
-                {t.closed || t.ended ? 'Replay' : 'Watch'}
+                {t.status === 'running' ? 'Watch' : 'Replay'}
               </button>
             </div>
           )
