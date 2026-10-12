@@ -7,15 +7,6 @@ A toolkit for running No-Limit Texas Hold'em bot competitions.
 
 Forked from [fullhouse-engine](https://github.com/uzlez/fullhouse-engine) (MIT), which provides the poker engine, Docker sandbox, validator and reference bots.
 
-> **Status: early development.** Working today:
-> - the engine, the Docker sandbox, the validator and the reference bots;
-> - the `poker` command: matches, tournaments, series, bench, verify and export;
-> - the web UI, with live and replay viewing, a launcher and tournament dashboards;
-> - human and LLM (MCP) seats;
-> - an agent skill for building bots.
->
-> Roadmap items marked ✅ are done; the rest are being built incrementally.
-
 ---
 
 ## How it works
@@ -311,107 +302,7 @@ def decide(state):
 
 ---
 
-## Roadmap
-
-### Goals
-
-1. **Tournament day:** given 10–40 bots, run a wide range of tournament styles with clear metrics, replayable and checkable results, and a visually satisfying interface for participants and spectators.
-2. **Local testing:** participants seat their bots at tables, watch them play, and download structured output covering hands, decisions and the bot's own logs.
-3. **Live viewing:** watch with playback controls, and seat **humans or LLMs (via MCP)**, both through the same seat interface.
-4. **Formats:** heads-up matches and a variety of tournaments.
-5. **Repeated runs:** rerun a format many times and aggregate the results, e.g. "across 100 heads-up single-elimination brackets, this bot won 37 times".
-
-Everything must be drivable by an agent, through the web UI (e.g. Claude in Chrome), the CLI and MCP.
-
-### Engine changes
-
-- ✅ **Blinds and stacks:** configurable small blind, big blind and antes in the engine. Starting stacks and rising blind levels across a match come with the table/format work.
-- ✅ **All-in blind fix:** a player who is all-in after posting a blind is never asked to act.
-- ✅ **Richer `game_state`:** blinds, button/SB/BB seats, hand number, time limit, and `bot_id` everywhere. Tournament context (level, players left) is still to come. New fields are added only, so existing bots keep working.
-- ✅ **Runner protocol v2:**
-  - `print()` output inside `decide()` is captured per decision as the bot's logs, instead of corrupting the protocol.
-  - Bots may return an optional `debug` dict.
-  - Think time is measured for every decision.
-- ✅ **Host hardening:** host-side timeouts, recovery when a bot process stalls or dies, stderr capture, and parallel warmup.
-- ✅ **Reproducible bots:** each bot's RNG is seeded from the match seed.
-- ✅ **Seat interface:** bots, humans and MCP clients share one seat interface, with decision times configurable per seat type (e.g. bot 2 s, human 30 s, LLM 120 s).
-
-### Formats
-
-| Format | Description |
-|---|---|
-| ✅ Heads-up | Fixed hands, cash or freezeout. Optional *duplicate* mode replays each deal with seats swapped to cut luck. (Best-of-K: later) |
-| ✅ Ring | 2–9 players, fixed hands or cash, scored in bb/100 |
-| ✅ Sit & Go | Single-table freezeout with rising blinds |
-| ✅ MTT | Multi-table freezeout with table balancing and a final table |
-| ✅ Bracket | Single-elimination heads-up, seeded or random, with byes |
-| ✅ Round-robin | Every pair plays heads-up; head-to-head matrix |
-| Swiss | Score-grouped tables, no rematches where possible (after v1) |
-| ✅ Series | Any format above, run N times with derived seeds |
-| Stages | Seed one event from another's results, e.g. Swiss → top-8 bracket (after v1) |
-
-Blind levels advance by **hand count**, not wall-clock time, so runs are deterministic.
-
-### Metrics
-
-- **Per match:**
-  - ✅ place, chip delta, bb/100, hands played
-  - ✅ timeouts, errors, think time
-  - VPIP, PFR, 3-bet, aggression factor, WTSD, W$SD (after v1)
-- **Per series:** ✅ win rate with Wilson confidence intervals, finish distribution, top-3 rate, average place; ✅ head-to-head matrix (round-robin); ratings (after v1).
-- ✅ **`poker bench <bot>`:** a fixed-seed duplicate gauntlet against the reference bots with 95% CIs, tracked per bot version, so you can see whether a bot is actually improving.
-
-### Reproducibility
-
-- **Seeds:** derived from run → match → hand and recorded alongside a full event log.
-- **`poker verify`:** replays every logged decision through the engine and confirms the decks, pots, awards and placings.
-- **Exports:** run bundles, plus per-bot exports so each participant only receives their own bot's internal logs.
-
-### Bot Lab
-
-- **Spot tester:** build a situation (cards, board, stacks, action so far), ask the bot what it does, and see its action distribution, logs and think time.
-- **Scenario suites:** `poker lab test` runs scenarios with expected actions, like unit tests.
-- **Play your bot:** take a human seat against it, in the browser or the terminal.
-
-### Interfaces
-
-- ✅ **`poker` CLI** (`--json` on every command): `serve`, `bots`, `match`, `run`, `results`, `runs`, `verify`, `export`, `bench`, `play`. Still to come: `poker bots new | validate | import <classroom-dir>` and `poker lab run | test <bot>`.
-- ✅ **API:** FastAPI with server-sent event streams for live matches.
-- **Web UI:**
-  - ✅ format launcher
-  - ✅ live/replay table with playback and a decision inspector
-  - ✅ run dashboards: bracket tree, MTT tables, series charts (Swiss rounds come with Swiss)
-  - broadcast mode for spectators
-  - bots page with benchmark history
-  - Bot Lab
-- ✅ **MCP server:** LLMs can join seats, wait for their turn and act, using the same seat interface as humans.
-- ✅ **Agent skills:** `build-poker-bot` (build a bot in a worktree and open a PR) and `verify-poker-runner` (drive the real UI, CLI and MCP end to end).
-
-### Planned layout
-
-```
-engine/ sandbox/ bots/   poker engine, sandbox, reference bots (from upstream, patched)
-arena/                   tournament runner: seats, tables, formats, stats, CLI, API, MCP
-web/                     React + TypeScript frontend
-my_bots/                 participants' bots (auto-discovered)
-configs/                 example run configs for every format
-docs/                    bot guide, organizer guide (GitHub Classroom), MCP, CLI
-```
-
-### Milestones
-
-1. ✅ **Engine + core:** engine patches, runner protocol v2, seats, tables, event logs, `poker match`, `poker verify`
-2. ✅ **Formats + metrics:** table, bracket, round-robin, MTT, series, stats, `poker run/results/runs/export/bench` (Swiss and stages after v1)
-3. **API + web UI:** ✅ server (jobs, pacing, live event streams); ✅ live/replay table with decision inspector; ✅ launcher; ✅ tournament dashboards
-4. ✅ **Remote seats:** human seats (browser and terminal), MCP server, decision timers
-5. **Tournament UX:** ✅ run dashboards (bracket, round robin, multi-table, series); broadcast mode, bots page
-6. **Lab + docs:** Bot Lab, GitHub Classroom import, Docker validation, docs; ✅ end-to-end tests (Playwright), ✅ agent skills
-
-Upstream leftovers (`demo.py`, `db/schema.sql`, `CONTRIBUTING.md`) will be replaced or removed as these milestones land.
-
----
-
-## Repo structure (current)
+## Repo structure
 
 ```
 arena/          Match runner: seats, tables, blind structures, formats, series, bench, verify, export, `poker` CLI
@@ -426,7 +317,7 @@ tests/          Engine, runner and arena tests
 .claude/skills/ Agent skills: build-poker-bot, verify-poker-runner
 data/runs/      Match logs (gitignored)
 data/bench/     Bench history per bot (gitignored)
-demo.py         Old upstream demo (to be replaced by the web UI)
+demo.py         Upstream demo script
 ```
 
 ---
