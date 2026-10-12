@@ -28,6 +28,7 @@ from arena import formats, structures
 from arena.events import DEFAULT_RUNS_DIR, EVENTS_FILE, SUMMARY_FILE
 from arena.pacing import DEFAULT_PACE_MS
 from arena.server.jobs import JobManager
+from arena.server.progress import run_progress, series_progress
 from arena.series import SERIES_FILE
 
 WEB_DIST = Path(__file__).resolve().parent.parent.parent / "web" / "dist"
@@ -94,14 +95,14 @@ def create_app(runs_dir: Path = DEFAULT_RUNS_DIR) -> FastAPI:
 
     def match_dir(key: str) -> Path:
         d = resolve(key)
-        if not (d / EVENTS_FILE).is_file() and key not in jobs.active_keys():
+        if not (d / EVENTS_FILE).is_file() and not jobs.is_active(key.split("/")[0]):
             raise HTTPException(404, f"no match {key!r}")
         return d
 
     def match_status(key: str, d: Path) -> str:
-        if (d / SUMMARY_FILE).is_file():
+        if (d / SUMMARY_FILE).is_file() or _last_type(d / EVENTS_FILE) == "match_end":
             return "complete"
-        if key in jobs.active_keys():
+        if jobs.is_active(key.split("/")[0]):
             return "running"
         return "incomplete"
 
@@ -226,6 +227,13 @@ def create_app(runs_dir: Path = DEFAULT_RUNS_DIR) -> FastAPI:
         data = read_json(f) if f else {}
         out = {"id": run_id, "kind": kind or (job.kind if job else None), "data": data,
                "job": job.to_dict() if job else None}
+        try:
+            if kind == "series":
+                out["progress"] = series_progress(d, data)
+            elif data.get("config"):
+                out["progress"] = run_progress(d, data, run_id)
+        except Exception as e:          # progress is a convenience; never break the page
+            out["progress_error"] = repr(e)
         if kind == "run" or (job and job.kind == "run"):
             mdir = d / "matches"
             out["matches"] = sorted(
@@ -362,6 +370,21 @@ def _read_lines(path: Path, start: int = 0, limit: int = None) -> list:
             if limit and len(out) >= limit:
                 break
     return out
+
+
+def _last_type(path: Path):
+    """Type of the last complete event in a log (cheap: reads the tail)."""
+    if not path.is_file():
+        return None
+    with open(path, "rb") as fh:
+        fh.seek(0, 2)
+        size = fh.tell()
+        fh.seek(max(0, size - 4096))
+        lines = [l for l in fh.read().split(b"\n") if l.strip()]
+    try:
+        return json.loads(lines[-1]).get("type") if lines else None
+    except ValueError:
+        return None
 
 
 def _count_lines(path: Path) -> int:

@@ -88,6 +88,10 @@ export function apply(s: TableState, e: PokerEvent): TableState {
     case 'level':
       return { ...s, level: e.level, blinds: { sb: e.sb, bb: e.bb, ante: e.ante } }
     case 'hand_start': {
+      // Players who busted or moved away last hand leave the table now.
+      const staying: Record<string, PlayerState> = {}
+      for (const [k, p] of Object.entries(s.players)) if (!p.busted || e.order.includes(k)) staying[k] = p
+      s = { ...s, players: staying }
       const players = mapPlayers(s, p => {
         const inHand = e.order.includes(p.name)
         return {
@@ -155,10 +159,21 @@ export function apply(s: TableState, e: PokerEvent): TableState {
     }
     case 'elimination':
       return update(s, e.bot, { busted: true, place: e.place, inHand: false })
-    case 'seat_change':
-      return e.reason === 'join'
-        ? update(s, e.bot, { seat: e.seat, stack: e.stack, busted: false })
-        : s
+    case 'seat_change': {
+      if (e.reason === 'join') {
+        const p: PlayerState = s.players[e.bot] ?? {
+          name: e.bot, seat: e.seat, stack: e.stack, bet: 0, cards: null, inHand: false, folded: false,
+          allIn: false, busted: false, place: null, lastAction: null, won: 0, rank: null, shown: false,
+        }
+        return { ...s, players: { ...s.players, [e.bot]: { ...p, seat: e.seat, stack: e.stack, busted: false,
+                                                             lastAction: 'Joined' } } }
+      }
+      if (e.reason === 'bust') return update(s, e.bot, { busted: true, inHand: false })
+      // moved to another table (balancing or a table break)
+      const players = { ...s.players }
+      delete players[e.bot]
+      return { ...s, players }
+    }
     case 'match_end': {
       let next: TableState = { ...s, results: e.results, stopped: e.stopped, acting: null }
       for (const r of e.results) next = update(next, r.bot, { place: r.place })

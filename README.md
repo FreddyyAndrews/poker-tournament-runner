@@ -109,6 +109,13 @@ poker match shark aggressor --pace 600    # then watch it from the Recent list
 
 **New** starts anything from a form: pick a format (table, bracket, round robin, multi-table), add players, choose how each match is played (freezeout, fixed hands or cash), the stack and blinds (presets with a level preview, or flat), and whether to watch it live (Live, Slow, Quick or Instant pace) or play it many times as a series. A summary shows exactly what will run and roughly how long a paced run takes. A single table opens straight into the live view; a tournament opens its run page, where **Now playing** links to the match being played.
 
+**Run pages** show each tournament live as it plays, with **Verify** (replays every match log) and **Download** buttons:
+
+- **Bracket:** the tree, round by round, with seeds, byes, chip counts and the champion; click a tie to watch it.
+- **Round robin:** a head-to-head grid (result and chips won per pairing), plus standings so far.
+- **Multi-table:** every table with its players, stacks, button and blinds, the chip leader and the elimination feed. **Watch** any table to follow it action by action.
+- **Series:** win rate per bot with 95% confidence intervals, top-3 rate, average place, finishing places, and every run.
+
 **Recent** lists every match, tournament and series. Open a match to watch it:
 
 - **Table:** cards dealt, bets, the pot, the acting bot outlined, showdowns with hand names and winners.
@@ -357,9 +364,9 @@ docs/                    bot guide, organizer guide (GitHub Classroom), MCP, CLI
 
 1. ✅ **Engine + core:** engine patches, runner protocol v2, seats, tables, event logs, `poker match`, `poker verify`
 2. ✅ **Formats + metrics:** table, bracket, round-robin, MTT, series, stats, `poker run/results/runs/export/bench` (Swiss and stages after v1)
-3. **API + web UI:** ✅ server (jobs, pacing, live event streams); ✅ live/replay table with decision inspector; ✅ launcher; dashboards next
+3. **API + web UI:** ✅ server (jobs, pacing, live event streams); ✅ live/replay table with decision inspector; ✅ launcher; ✅ tournament dashboards
 4. **Remote seats:** human seats, MCP server, decision timers
-5. **Tournament UX:** run dashboards, broadcast mode, bots page
+5. **Tournament UX:** ✅ run dashboards (bracket, round robin, multi-table, series); broadcast mode, bots page
 6. **Lab + docs:** Bot Lab, GitHub Classroom import, Docker validation, docs, end-to-end tests
 
 Upstream leftovers (`demo.py`, `db/schema.sql`, `CONTRIBUTING.md`) will be replaced or removed as these milestones land.

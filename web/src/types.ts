@@ -83,6 +83,7 @@ export type MatchStart = Base & {
   seats: SeatInfo[]
   format?: string
   table_size?: number
+  table?: number
 }
 export type LevelEvent = Base & { type: 'level'; hand: number; level: number; sb: number; bb: number; ante: number }
 export type HandStart = Base & {

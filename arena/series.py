@@ -67,6 +67,9 @@ def run_series(cfg: formats.RunConfig, runs: int, series_id: str = None,
     series_dir.mkdir(parents=True, exist_ok=True)
     t0 = time.time()
     done = []
+    _write(series_dir, {"kind": "series", "series_id": series_id, "format": cfg.format,
+                        "name": cfg.name, "seed": seed, "runs": runs, "config": cfg.to_dict(),
+                        "status": "running", "run_dir": str(series_dir)})
 
     def one(i):
         run_cfg = replace(cfg, seed=derive_seed(seed, "run", i))
@@ -78,11 +81,18 @@ def run_series(cfg: formats.RunConfig, runs: int, series_id: str = None,
                 "winner": result["standings"][0]["bot"]})
         return result
 
-    if workers > 1 and runs > 1:
-        with ThreadPoolExecutor(max_workers=workers) as pool:
-            results = list(pool.map(one, range(runs)))
-    else:
-        results = [one(i) for i in range(runs)]
+    try:
+        if workers > 1 and runs > 1:
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                results = list(pool.map(one, range(runs)))
+        else:
+            results = [one(i) for i in range(runs)]
+    except BaseException as e:
+        _write(series_dir, {"kind": "series", "series_id": series_id, "format": cfg.format,
+                            "name": cfg.name, "seed": seed, "runs": runs, "config": cfg.to_dict(),
+                            "status": "cancelled" if type(e).__name__ == "Cancelled" else "error",
+                            "error": repr(e), "runs_done": len(done), "run_dir": str(series_dir)})
+        raise
 
     summary = {
         "kind": "series", "series_id": series_id, "format": cfg.format, "name": cfg.name,
@@ -91,8 +101,13 @@ def run_series(cfg: formats.RunConfig, runs: int, series_id: str = None,
         "run_ids": [r["run_id"] for r in results],
         "winners": [r["standings"][0]["bot"] for r in results],
         "duration_s": round(time.time() - t0, 2), "run_dir": str(series_dir),
+        "status": "complete",
     }
-    tmp = series_dir / (SERIES_FILE + ".tmp")
-    tmp.write_text(json.dumps(summary, indent=2, default=str))
-    tmp.replace(series_dir / SERIES_FILE)
+    _write(series_dir, summary)
     return summary
+
+
+def _write(series_dir: Path, data: dict):
+    tmp = series_dir / (SERIES_FILE + ".tmp")
+    tmp.write_text(json.dumps(data, indent=2, default=str))
+    tmp.replace(series_dir / SERIES_FILE)

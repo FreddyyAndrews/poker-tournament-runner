@@ -34,7 +34,14 @@ export function MatchView({ matchKey }: { matchKey: string }) {
 
   const start = timeline.list[0]?.type === 'match_start' ? timeline.list[0] : null
   const names = useMemo(() => start ? start.seats.map(s => s.name) : [], [start])
-  const colorOf = useCallback((n: string) => playerColor(Math.max(0, names.indexOf(n))), [names])
+  // Seat order fixes colours; players who join later (multi-table) get a stable colour from their name.
+  const colorOf = useCallback((n: string) => {
+    const i = names.indexOf(n)
+    if (i >= 0) return playerColor(i)
+    let h = 0
+    for (const c of n) h = (h * 31 + c.charCodeAt(0)) >>> 0
+    return playerColor(h % 8)
+  }, [names])
   const totalHands = data.meta?.summary?.hands ?? handStarts.length
 
   // Keyboard: space play/pause, arrows step, shift+arrows hands, L live.
@@ -56,11 +63,16 @@ export function MatchView({ matchKey }: { matchKey: string }) {
 
   const cfg = start?.config
   const jobId = matchKey.split('/')[0]
+  const last = matchKey.split('/').pop()!
+  const title = /^t\d+$/.test(last) && matchKey.includes('/tables/') ? `Table ${last.slice(1)}` : last
   return (
     <div className="match">
       <div className="stage">
         <div className="stage-head">
-          <span className="title" data-testid="match-title">{matchKey.split('/').pop()}</span>
+          {matchKey.includes('/') && (
+            <a className="sub" href={`#/run/${matchKey.split('/matches/')[0]}`}>{matchKey.split('/matches/')[0]} /</a>
+          )}
+          <span className="title" data-testid="match-title">{title}</span>
           {running ? <span className="pill live" data-testid="status"><span className="dot" />Live</span>
             : status === 'complete' ? <span className="pill" data-testid="status">Complete</span>
             : status === 'incomplete' ? <span className="pill" data-testid="status">Incomplete</span> : null}
@@ -77,7 +89,8 @@ export function MatchView({ matchKey }: { matchKey: string }) {
                   title="Spectator view shows every hole card; fair view hides them until showdown">
             {showAll ? 'Hide hole cards' : 'Show hole cards'}
           </button>
-          {running && <button className="ghost" onClick={() => api.cancel(jobId)}>Stop</button>}
+          {running && <button className="ghost" onClick={() => api.cancel(jobId)}>
+            {matchKey.includes('/') ? 'Stop run' : 'Stop'}</button>}
           {status === 'complete' && <a href={api.exportUrl(matchKey)}><button className="ghost">Download</button></a>}
         </div>
 

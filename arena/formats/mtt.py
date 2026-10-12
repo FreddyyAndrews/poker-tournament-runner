@@ -21,6 +21,7 @@ log is the same no matter how threads are scheduled; that is what lets
 import math
 import random
 import time
+from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 
 import arena
@@ -37,13 +38,25 @@ MATCH_ID = "mtt"
 
 
 class _Buffer:
-    def __init__(self):
+    """Collects a table's events for the main log (flushed in table order),
+    and optionally writes them straight away to the table's own live log."""
+
+    def __init__(self, live=None):
         self.events = []
+        self.live = live
 
     def emit(self, event_type, **data):
         event = {"type": event_type, **data}
         self.events.append(event)
+        if self.live is not None:
+            self.live.emit(event_type, **data)
         return event
+
+    def end(self, **data):
+        if self.live is not None:
+            self.live.emit("match_end", **data)
+            self.live.close()
+            self.live = None
 
 
 def _flush(tables, log):
@@ -56,7 +69,7 @@ def _flush(tables, log):
 
 
 def play_mtt(seats, match_cfg, table_size: int, match_id: str, log, workers: int = 1,
-             pacer=None) -> dict:
+             pacer=None, table_logs_dir=None) -> dict:
     """Play a multi-table freezeout with already-built seats. Returns
     {"results", "hands", "stopped"} like play_match."""
     seed = match_cfg.seed
@@ -70,8 +83,18 @@ def play_mtt(seats, match_cfg, table_size: int, match_id: str, log, workers: int
     for k, s in enumerate(order):
         tid = k % n_tables + 1
         slots[tid][k // n_tables] = s
+    def live_log(tid, sl):
+        """Per-table live log (for watching one table as it plays); None in replays."""
+        if table_logs_dir is None:
+            return None
+        live = EventLog(Path(table_logs_dir) / f"t{tid}")
+        live.emit("match_start", match_id=f"{match_id}_t{tid}", seed=seed, config=match_cfg.to_dict(),
+                  format="mtt_table", table=tid, table_size=table_size,
+                  seats=[{**s.info(), "seat": i} for i, s in enumerate(sl) if s])
+        return live
+
     tables = {tid: Table(sl, {s.name: match_cfg.starting_stack for s in sl if s},
-                         match_cfg.structure, derive_seed(seed, "table", tid), _Buffer(),
+                         match_cfg.structure, derive_seed(seed, "table", tid), _Buffer(live_log(tid, sl)),
                          f"{match_id}_t{tid}", table_id=tid, pacer=pacer)
               for tid, sl in slots.items()}
     by_name = {s.name: s for s in seats}
@@ -154,6 +177,8 @@ def play_mtt(seats, match_cfg, table_size: int, match_id: str, log, workers: int
                               busted_on.get(nm))
                    for nm in by_name]
         results.sort(key=lambda r: (r["place"] if r["place"] is not None else 10**6, r["bot"]))
+        for t in tables.values():
+            t.log.end(hands=tick, results=[], stopped=stopped)
         log.emit("match_end", hands=tick, duration_s=round(time.time() - t0, 2),
                  results=results, stopped=stopped)
     return {"results": results, "hands": tick, "stopped": stopped}
@@ -179,9 +204,10 @@ def _rebalance(tables, table_size, seed, tick, log):
             dst = min((t for t in tables if t != tid and tables[t].empty_seats()),
                       key=lambda t: (c[t], t))
             move(name, breaking, tables[dst], "table_break")
+        breaking._emit("table_closed", hand=tick)
         _flush({tid: breaking}, log)
+        breaking.log.end(hands=tick, results=[], stopped="table_closed")
         del tables[tid]
-        log.emit("table_closed", hand=tick, table=tid)
 
     # Balance: move from the fullest table to the emptiest until within one.
     while True:
@@ -208,7 +234,7 @@ def play(cfg, ctx) -> dict:
             pacer = Pacer(ctx.pace_ms, ctx.cancel) if (ctx.pace_ms or ctx.cancel) else None
             outcome = play_mtt(seats, match_cfg, cfg.table_size, MATCH_ID, log,
                                workers=max(ctx.workers, len(seats)) if ctx.pace_ms else ctx.workers,
-                               pacer=pacer)
+                               pacer=pacer, table_logs_dir=run_dir / "tables")
         except Cancelled:
             interrupted = "cancelled"
             raise

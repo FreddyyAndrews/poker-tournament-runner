@@ -46,7 +46,7 @@ test('run a quick series and see the results', async ({ page }) => {
   await page.getByTestId('launch-btn').click()
 
   await expect(page).toHaveURL(/#\/run\/series_table_/)
-  await expect(page.getByText('Results across runs')).toBeVisible({ timeout: 20_000 })
+  await expect(page.getByTestId('series-table')).toBeVisible({ timeout: 20_000 })
 })
 
 test('the form explains what is missing', async ({ page }) => {
