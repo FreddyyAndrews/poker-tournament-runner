@@ -162,7 +162,10 @@ def test_duplicate_ids_and_missing_things(client):
     assert client.get("/api/runs/nope").status_code == 404
     assert client.get("/api/jobs/nope").status_code == 404
     assert client.get("/api/matches/..%2F..%2Fetc").status_code == 404
-    assert client.get("/api/matches/../../etc/events").status_code == 404
+    # The client normalises this to /etc/events: a UI route, never a file outside the app.
+    r = client.get("/api/matches/../../etc/events")
+    assert r.status_code == 404 or 'id="root"' in r.text
+    assert client.get("/api/nope").status_code == 404
 
 
 def test_cancel_a_tournament_run(client):

@@ -1,4 +1,4 @@
-.PHONY: install demo test validate clean
+.PHONY: install demo test validate clean web web-test
 
 install:
 	@echo ">> Installing Cython<3 (eval7 build dep)"
@@ -23,3 +23,10 @@ validate:
 clean:
 	find . -type d -name __pycache__ -exec rm -rf {} +
 	find . -type f -name "*.pyc" -delete
+
+web:
+	@echo ">> Building the web UI (served by poker serve)"
+	cd web && npm install && npm run build
+
+web-test: web
+	cd web && npx playwright install chromium && npx playwright test

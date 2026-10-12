@@ -198,6 +198,10 @@ def create_app(runs_dir: Path = DEFAULT_RUNS_DIR) -> FastAPI:
                 if kind is None:
                     continue
                 data = read_json(f) if f else {}
+                if kind == "match" and not data.get("seats"):
+                    first = _read_lines(d / EVENTS_FILE, 0, limit=1)
+                    if first:
+                        data = {"seats": first[0].get("seats", []), "status": "running"}
                 job = jobs.get(d.name)
                 status = (job.status if job else None) or data.get("status") or \
                     ("complete" if f else "incomplete")
@@ -205,14 +209,14 @@ def create_app(runs_dir: Path = DEFAULT_RUNS_DIR) -> FastAPI:
                     "id": d.name, "kind": kind, "status": status,
                     "format": data.get("format") or ("table" if kind == "match" else None),
                     "name": data.get("name"),
-                    "bots": [b.get("name") for b in data.get("bots", [])] or
+                    "bots": [b.get("name") for b in data.get("bots") or data.get("seats") or []] or
                             [r["bot"] for r in (data.get("results") or data.get("aggregate") or [])],
                     "runs": data.get("runs"), "modified": d.stat().st_mtime,
                     "winner": _winner(kind, data),
                 })
         return rows
 
-    @app.get("/api/runs/{run_id}")
+    @app.get("/api/runs/{run_id:path}")
     def get_run(run_id: str):
         d = resolve(run_id)
         kind, f = run_kind(d)
@@ -323,6 +327,8 @@ def create_app(runs_dir: Path = DEFAULT_RUNS_DIR) -> FastAPI:
 
         @app.get("/{path:path}", include_in_schema=False)
         def spa(path: str):
+            if path.startswith("api/") or path == "api":
+                raise HTTPException(404, "not found")
             f = (WEB_DIST / path).resolve()
             if path and WEB_DIST.resolve() in f.parents and f.is_file():
                 return FileResponse(f)
