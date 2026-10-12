@@ -18,6 +18,7 @@ export type PlayerState = {
   won: number               // awarded this hand
   rank: string | null       // hand name at showdown
   shown: boolean            // cards revealed at showdown
+  net: number               // chips won over the match so far (sum of hand deltas); the score in cash games
 }
 
 export type TableState = {
@@ -79,7 +80,7 @@ export function apply(s: TableState, e: PokerEvent): TableState {
         players[seat.name] = {
           name: seat.name, seat: seat.seat ?? i, stack: e.config.starting_stack, bet: 0,
           cards: null, inHand: false, folded: false, allIn: false, busted: false, place: null,
-          lastAction: null, won: 0, rank: null, shown: false,
+          lastAction: null, won: 0, rank: null, shown: false, net: 0,
         }
       })
       const seatCount = e.table_size ?? Math.max(2, ...Object.values(players).map(p => p.seat + 1))
@@ -154,7 +155,7 @@ export function apply(s: TableState, e: PokerEvent): TableState {
     }
     case 'hand_end': {
       const players = mapPlayers(s, p => e.stacks[p.name] !== undefined
-        ? { ...p, stack: e.stacks[p.name], bet: 0 } : p)
+        ? { ...p, stack: e.stacks[p.name], bet: 0, net: p.net + (e.deltas[p.name] ?? 0) } : p)
       return { ...s, players, pot: 0, acting: null, handOver: true }
     }
     case 'elimination':
@@ -163,7 +164,7 @@ export function apply(s: TableState, e: PokerEvent): TableState {
       if (e.reason === 'join') {
         const p: PlayerState = s.players[e.bot] ?? {
           name: e.bot, seat: e.seat, stack: e.stack, bet: 0, cards: null, inHand: false, folded: false,
-          allIn: false, busted: false, place: null, lastAction: null, won: 0, rank: null, shown: false,
+          allIn: false, busted: false, place: null, lastAction: null, won: 0, rank: null, shown: false, net: 0,
         }
         return { ...s, players: { ...s.players, [e.bot]: { ...p, seat: e.seat, stack: e.stack, busted: false,
                                                              lastAction: 'Joined' } } }

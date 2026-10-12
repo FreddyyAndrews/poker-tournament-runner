@@ -240,7 +240,7 @@ export function MatchView({ matchKey, seatToken, playAs }: { matchKey: string; s
           {(['hand', 'decision', 'chart'] as Tab[]).map(t => (
             <button key={t} className={tab === t ? 'on' : ''} onClick={() => setTab(t)} role="tab"
                     data-testid={`tab-${t}`}>
-              {t === 'hand' ? 'Hand log' : t === 'decision' ? 'Decision' : 'Stacks'}
+              {t === 'hand' ? 'Hand log' : t === 'decision' ? 'Decision' : cfg?.mode === 'cash' ? 'Net' : 'Stacks'}
             </button>
           ))}
         </div>
@@ -249,7 +249,7 @@ export function MatchView({ matchKey, seatToken, playAs }: { matchKey: string; s
                                       onPick={i => { pb.seek(i); if (timeline.list[i].type === 'decision') setTab('decision') }} />}
           {tab === 'decision' && <Inspector d={state.lastDecision} />}
           {tab === 'chart' && <StackChart events={timeline.list} cursor={pb.cursor} names={names}
-                                          start={cfg?.starting_stack ?? 0} colorOf={colorOf}
+                                          start={cfg?.starting_stack ?? 0} cash={cfg?.mode === 'cash'} colorOf={colorOf}
                                           onSeekHand={h => pb.seek(handStarts[h] ?? 0)} />}
         </div>
       </aside>

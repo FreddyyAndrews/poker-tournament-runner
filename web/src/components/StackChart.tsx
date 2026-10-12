@@ -9,35 +9,47 @@ type Props = {
   cursor: number
   names: string[]                    // series order (= seat order, fixes colours)
   start: number                      // starting stack
+  cash?: boolean                     // cash game: plot the running net instead of stacks
   colorOf: (name: string) => string
   onSeekHand: (hand: number) => void
 }
 
 const W = 340, H = 170, PAD = { l: 38, r: 64, t: 8, b: 20 }
 
-// Stacks after each hand, up to the cursor. Hover: crosshair + every bot's stack.
-export function StackChart({ events, cursor, names, start, colorOf, onSeekHand }: Props) {
+// Stacks after each hand, up to the cursor (or, in a cash game, where stacks reset
+// every hand, each bot's running net). Hover: crosshair + every bot's value.
+export function StackChart({ events, cursor, names, start, cash = false, colorOf, onSeekHand }: Props) {
   const [hover, setHover] = useState<number | null>(null)
   const ref = useRef<SVGSVGElement>(null)
 
   const points = useMemo(() => {
     const pts: { hand: number | null; stacks: Record<string, number> }[] = [
-      { hand: null, stacks: Object.fromEntries(names.map(n => [n, start])) }]
+      { hand: null, stacks: Object.fromEntries(names.map(n => [n, cash ? 0 : start])) }]
     let last = pts[0].stacks
     for (let i = 0; i <= cursor && i < events.length; i++) {
       const e = events[i]
       if (e.type === 'hand_end') {
-        last = { ...last, ...e.stacks }
+        if (cash) {
+          last = { ...last }
+          for (const [n, d] of Object.entries(e.deltas)) last[n] = (last[n] ?? 0) + d
+        } else {
+          last = { ...last, ...e.stacks }
+        }
         pts.push({ hand: e.hand, stacks: last })
       }
     }
     return pts
-  }, [events, cursor, names, start])
+  }, [events, cursor, names, start, cash])
 
-  const maxY = Math.max(start * 2, ...points.flatMap(p => Object.values(p.stacks)))
+  // Stacks: 0 to at least twice the start. Net: symmetric around 0 so up and down read the same.
+  const values = points.flatMap(p => Object.values(p.stacks))
+  const extent = Math.max(1, ...values.map(Math.abs))
+  const maxY = cash ? extent : Math.max(start * 2, ...values)
+  const minY = cash ? -extent : 0
   const xs = (i: number) => PAD.l + (points.length > 1 ? (i / (points.length - 1)) * (W - PAD.l - PAD.r) : 0)
-  const ys = (v: number) => PAD.t + (1 - v / maxY) * (H - PAD.t - PAD.b)
-  const ticks = [0, maxY / 2, maxY].map(v => Math.round(v))
+  const ys = (v: number) => PAD.t + (1 - (v - minY) / (maxY - minY)) * (H - PAD.t - PAD.b)
+  const ticks = [minY, (minY + maxY) / 2, maxY].map(v => Math.round(v))
+  const signed = (n: number) => (cash && n > 0 ? '+' : '') + fmt(n)
 
   // Direct labels at the line ends (<= 4 series), nudged apart vertically.
   const ends = names.map(n => ({ n, y: ys(points[points.length - 1].stacks[n] ?? 0) }))
@@ -54,15 +66,17 @@ export function StackChart({ events, cursor, names, start, colorOf, onSeekHand }
 
   if (points.length < 2) return <div className="empty">The chart starts after the first hand.</div>
   return (
-    <div className="chart" data-testid="stack-chart">
+    <div className="chart" data-testid="stack-chart" data-mode={cash ? 'net' : 'stacks'}>
+      {cash && <div className="muted small" style={{ marginBottom: 4 }}>Net chips over the match (stacks reset every hand in a cash game)</div>}
       <svg ref={ref} viewBox={`0 0 ${W} ${H}`} onPointerMove={onMove} onPointerLeave={() => setHover(null)}
            onClick={() => hp && hp.hand !== null && onSeekHand(hp.hand)} style={{ cursor: 'pointer' }}
-           role="img" aria-label="Stack sizes by hand">
+           role="img" aria-label={cash ? 'Net chips by hand' : 'Stack sizes by hand'}>
         <g className="grid axis">
           {ticks.map(t => (
             <g key={t}>
               <line x1={PAD.l} x2={W - PAD.r} y1={ys(t)} y2={ys(t)} />
-              <text x={PAD.l - 6} y={ys(t) + 4} textAnchor="end" className="num">{short(t)}</text>
+              <text x={PAD.l - 6} y={ys(t) + 4} textAnchor="end" className="num">
+                {t < 0 ? '-' + short(-t) : (cash && t > 0 ? '+' : '') + short(t)}</text>
             </g>
           ))}
           <text x={PAD.l} y={H - 4} className="num">start</text>
@@ -86,7 +100,7 @@ export function StackChart({ events, cursor, names, start, colorOf, onSeekHand }
             <div className="row" key={n}>
               <span className="key" style={{ background: colorOf(n) }} />
               <span className="sub">{n}</span>
-              <span className="v">{fmt(hp.stacks[n] ?? 0)}</span>
+              <span className="v">{signed(hp.stacks[n] ?? 0)}</span>
             </div>
           ))}
         </div>

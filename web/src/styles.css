@@ -140,6 +140,7 @@ table.list td.r, table.list th.r { text-align: right; }
 .seat .swatch { width: 8px; height: 8px; border-radius: 2px; grid-row: span 2; }
 .seat .name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .seat .stack { color: var(--text-2); font-size: 13px; }
+.seat .stack .net { margin-left: 6px; color: var(--text); font-weight: 600; }
 .seat .badge {
   grid-row: span 2; font-size: 11px; font-weight: 700; width: 20px; height: 20px; border-radius: 50%;
   display: grid; place-items: center; background: var(--text); color: var(--bg);
@@ -230,6 +231,8 @@ table.list td.r, table.list th.r { text-align: right; }
 .standings { width: 100%; border-collapse: collapse; font-size: 13px; }
 .standings td { padding: 5px 4px; border-bottom: 1px solid var(--line); }
 .standings td.r { text-align: right; }
+.standings th { padding: 0 4px 4px; font-weight: 500; font-size: 11px; color: var(--text-3, var(--text-2)); text-transform: uppercase; letter-spacing: 0.04em; }
+.standings th.r { text-align: right; }
 .standings .who { display: flex; align-items: center; gap: 8px; }
 .standings .swatch { width: 8px; height: 8px; border-radius: 2px; flex: none; }
 .standings tr.out td { color: var(--muted); }

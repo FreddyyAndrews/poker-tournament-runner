@@ -71,6 +71,7 @@ type Props = {
 export function PokerTable({ state, showAll, colorOf, me, waitingFor, prev, animMs = 0 }: Props) {
   const players = Object.values(state.players)
   const count = Math.max(state.seatCount, 2)
+  const cash = state.start?.config.mode === 'cash'
   const winners = new Set(players.filter(p => p.won > 0).map(p => p.name))
   const [flights, setFlights] = useState<Flight[]>([])
   const timers = useRef<number[]>([])
@@ -135,6 +136,8 @@ export function PokerTable({ state, showAll, colorOf, me, waitingFor, prev, anim
                 {badge ? <span className="badge" title="Dealer button">{badge}</span> : <span />}
                 <span className="stack num">
                   {p.busted && p.place ? `Out · ${ord(p.place)}` : fmt(p.stack)}
+                  {cash && <span className="net" title="Net over the match" data-testid={`net-${p.name}`}>
+                    {p.net === 0 ? '\u00b10' : (p.net > 0 ? '+' : '') + fmt(p.net)}</span>}
                 </span>
               </div>
               <div className="say num">

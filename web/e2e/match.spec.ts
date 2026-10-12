@@ -87,3 +87,25 @@ test('recent list links to matches', async ({ page, request }) => {
   await page.getByTestId('run-row').filter({ hasText: 'e2e_list' }).click()
   await expect(page.getByTestId('match-title')).toHaveText('e2e_list')
 })
+
+test('cash game shows each bot\'s running net, matching the final results', async ({ page, request }) => {
+  const key = await startMatch(request, {
+    bots: ['shark', 'aggressor', 'mathematician'], mode: 'cash', hands: 30, seed: 5, pace_ms: 0, id: 'e2e_cash' })
+  await waitDone(request, key)
+  const summary = (await (await request.get(`/api/matches/${key}`)).json()).summary
+  const sign = (n: number) => n === 0 ? '±0' : (n > 0 ? '+' : '') + n.toLocaleString('en-US')
+
+  await page.goto(`/#/match/${key}`)
+  await expect(page.getByTestId('net-shark')).toHaveText('±0')               // before any hand
+  await page.getByTestId('scrubber').focus()
+  await page.keyboard.press('End')
+  await expect(page.getByTestId('position')).toContainText('Hand 30 of 30')
+  for (const r of summary.results) {
+    await expect(page.getByTestId(`net-${r.bot}`)).toHaveText(sign(r.delta))
+    await expect(page.getByTestId('standings').locator('tr', { hasText: r.bot }).locator('td').last())
+      .toHaveText(sign(r.delta))
+  }
+  await page.getByTestId('tab-chart').click()
+  await expect(page.getByTestId('tab-chart')).toHaveText('Net')
+  await expect(page.getByTestId('stack-chart')).toHaveAttribute('data-mode', 'net')
+})
