@@ -62,6 +62,24 @@ PRIOR = {
 }
 
 
+PRE_SZ_PRIOR = [0.08, 0.12, 0.08, 0.04]
+POST_SZ_PRIOR = [0.14, 0.12, 0.06, 0.04]
+
+
+def pre_size_bucket(raise_to, bb, all_in):
+    if all_in:
+        return 3
+    x = raise_to / max(1, bb)
+    return 0 if x < 3 else 1 if x < 6 else 2 if x < 15 else 3
+
+
+def post_size_bucket(raise_to, current_bet, pot_before, all_in):
+    if all_in:
+        return 3
+    x = (raise_to - current_bet) / max(1, pot_before)
+    return 0 if x < 0.4 else 1 if x < 0.8 else 2 if x < 1.5 else 3
+
+
 def bucket(price):
     for k, e in enumerate(EDGES):
         if price < e:
@@ -78,6 +96,21 @@ class Opp:
         self.hands = 0
         self.vpip = 0
         self.pfr = 0
+        self.pre_sz = [0, 0, 0, 0]       # preflop raises by size: <3bb, <6bb, <15bb, bigger/all-in
+        self.post_sz = [0, 0, 0, 0]      # postflop bets/raises by size: <0.4, <0.8, <1.5 pot, bigger/all-in
+        self.post_actions = 0
+
+    def pre_range(self, k):
+        """Fraction of hands behind a preflop raise in size bucket k (bigger = tighter)."""
+        prior = PRE_SZ_PRIOR
+        mass = sum(prior[k:]) * 3 + sum(self.pre_sz[k:])
+        return max(0.03, min(1.0, mass / (3 + self.hands)))
+
+    def post_agg(self, k):
+        """Fraction of postflop actions that are bets/raises in bucket k or bigger."""
+        prior = POST_SZ_PRIOR
+        mass = sum(prior[k:]) * 3 + sum(self.post_sz[k:])
+        return max(0.03, min(1.0, mass / (3 + self.post_actions)))
 
     def fold_prob(self, price, preflop, aggr=False):
         table = self.ftb[(preflop, aggr)]
@@ -112,6 +145,8 @@ class Opp:
             "hands": self.hands,
             "vpip": round(self.vpip_rate(), 2),
             "pfr": round(self.pfr_rate(), 2),
+            "pre_range_by_size": [round(self.pre_range(k), 2) for k in range(4)],
+            "post_agg_by_size": [round(self.post_agg(k), 2) for k in range(4)],
             "raise_vs_bet": [round(self.raise_rate(True), 2), round(self.raise_rate(False), 2)],
             "shove": [round(self.shove_rate(True), 2), round(self.shove_rate(False), 2)],
             "ftb": {"%s%s" % ("pre" if k[0] else "post", "_aggr" if k[1] else ""):
@@ -150,6 +185,9 @@ class Replay:
         self.street_aggr = set()
         self.pre_raised = set()
         self.pre_called = set()
+        self.pre_bucket = {}      # bot -> biggest preflop raise size bucket
+        self.street_bucket = {}   # bot -> size bucket of latest bet/raise this street
+        self.bb = 100
 
     def players(self):
         return [p for p in self.bets if p not in self.folded and p not in self.allin]
@@ -168,6 +206,7 @@ class Replay:
         self.current_bet = 0
         self.acted = set()
         self.street_aggr = set()
+        self.street_bucket = {}
 
     def apply(self, e):
         bot, act, amt = e["bot_id"], e["action"], e.get("amount") or 0
@@ -178,6 +217,8 @@ class Replay:
             self.pot += amt
             return
         if act in ("small_blind", "big_blind"):
+            if act == "big_blind":
+                self.bb = amt
             self.bets[bot] = amt
             self.pot += amt
             self.current_bet = max(self.current_bet, amt)
@@ -189,6 +230,8 @@ class Replay:
         price = owed / self.pot if self.pot > 0 else 0.0
         pre = self.street == 0
         t = o.ftb[(pre, bot in self.street_aggr)] if learn else None
+        if learn and not pre:
+            o.post_actions += 1
         if act == "fold":
             if learn and owed > 0:
                 t[bucket(price)][0] += 1
@@ -215,7 +258,16 @@ class Replay:
         elif act in ("raise", "all_in"):
             if pre:
                 self.pre_raised.add(bot)
+                bk = pre_size_bucket(amt, self.bb, act == "all_in")
+                self.pre_bucket[bot] = max(bk, self.pre_bucket.get(bot, 0))
+            else:
+                bk = post_size_bucket(amt, self.current_bet, self.pot, act == "all_in")
+                self.street_bucket[bot] = bk
             if learn:
+                if pre:
+                    o.pre_sz[bk] += 1
+                else:
+                    o.post_sz[bk] += 1
                 if owed > 0:
                     t[bucket(price)][1] += 1
                     o.rvb[pre][1] += 1
@@ -378,17 +430,6 @@ RISK = 0.03            # EV margin per chip risked on a bet/raise (doubled beyon
 BET_MARGIN = 0.02      # bet must beat check by this fraction of the pot
 
 
-def opp_range(o, raised_pre, called_pre, n_players):
-    """Fraction of starting hands this opponent is assumed to hold."""
-    if o is None:
-        return None
-    if raised_pre:
-        return max(0.03, min(1.0, o.pfr_rate(0.25 if n_players == 2 else 0.15) * 1.1))
-    if called_pre:
-        return max(0.08, min(1.0, o.vpip_rate(0.45 if n_players == 2 else 0.3) * 1.15))
-    return None
-
-
 def _decide(gs, t0):
     ME["id"] = gs["your_bot_id"]
     update_model(gs)
@@ -421,10 +462,26 @@ def _decide(gs, t0):
         rp.apply(ev_)
     pre_raised, pre_called, aggr_now = rp.pre_raised, rp.pre_called, rp.street_aggr
 
-    ranges = []
-    for p in live:
+    def base_spec(p):
+        """(preflop range fraction, board filter) for a live opponent."""
         o = OPPS.get(p["bot_id"])
-        ranges.append(opp_range(o, p["bot_id"] in pre_raised, p["bot_id"] in pre_called, n_players))
+        bid = p["bot_id"]
+        if bid in pre_raised:
+            k = rp.pre_bucket.get(bid, 1)
+            q = o.pre_range(k) if o else max(0.03, min(1.0, sum(PRE_SZ_PRIOR[k:])))
+        elif bid in pre_called:
+            q = max(0.08, min(1.0, (o.vpip_rate(0.45 if n_players == 2 else 0.3) if o else 0.45) * 1.15))
+        else:
+            q = None
+        fb = 0.0
+        if not pre and bid in rp.street_bucket:
+            k = rp.street_bucket[bid]
+            agg = o.post_agg(k) if o else max(0.03, sum(POST_SZ_PRIOR[k:]))
+            fb = max(0.0, 1 - agg)
+        return q, fb
+
+    specs = [base_spec(p) for p in live]
+    ranges = [q for q, _ in specs]
 
     iters = 600 if len(live) == 1 else max(150, 500 // len(live))
     eq_cache = {}
@@ -438,7 +495,7 @@ def _decide(gs, t0):
                 eq_cache[key] = equity(my, board, list(specs), iters, rng)
         return eq_cache[key]
 
-    e = eq_vs([(q, 0.0) for q in ranges])
+    e = eq_vs(specs)
 
     # In position = nobody live acts after me this street.
     seat = gs["seat_to_act"]
@@ -454,7 +511,7 @@ def _decide(gs, t0):
         evs["fold"] = 0.0
         call_amt = min(owed, stack)
         ec = e if call_amt >= stack else e * realize
-        evs["call"] = ec * pot - (1 - ec) * call_amt
+        evs["call"] = ec * pot - (1 - ec) * call_amt - RISK * call_amt
     else:
         evs["check"] = e * realize * pot
 
@@ -498,27 +555,27 @@ def _decide(gs, t0):
         cont, rspecs = [], []
         rprob = 0.0
         raise_tu = None
-        for p, q in zip(live, ranges):
+        for p, (q, fb) in zip(live, specs):
             o = OPPS.get(p["bot_id"])
             their_max = p["bet_this_street"] + p["stack"]
             opp_owed = min(r, their_max) - p["bet_this_street"]
             if p["state"] != "active" or opp_owed <= 0:
                 # already all in: cannot fold, cannot raise
                 F = 0.0
-                cont.append((q, 0.0))
-                rspecs.append((q, 0.0))
+                cont.append((q, fb))
+                rspecs.append((q, fb))
                 continue
             price = opp_owed / pot_after
             ag = p["bot_id"] in aggr_now
             f = o.fold_prob(price, pre, ag) if o else PRIOR[(pre, ag)][bucket(price)]
             F *= f
             max_owed = max(max_owed, opp_owed)
-            cont.append((q, f))
+            cont.append((q, 1 - (1 - fb) * (1 - f)))
             # If they raise, they hold the top part of their continuing range.
             rr = o.raise_rate(pre) if o else 0.15
             if their_max <= r:
                 rr = 0.0
-            rspecs.append((q, min(0.97, 1 - (1 - f) * rr)))
+            rspecs.append((q, min(0.97, 1 - (1 - fb) * (1 - f) * rr)))
             if rr > rprob:
                 rprob = rr
                 shove = (o.shove_rate(pre) if o else 0.2) > 0.5
@@ -547,7 +604,8 @@ def _decide(gs, t0):
     if best_r and evs[best_r[0]] > base + BET_MARGIN * max(pot, bb):
         choice = best_r[0]
 
-    debug = {"e": round(e, 3), "n_opp": len(live), "ranges": ranges, "in_pos": in_pos,
+    debug = {"e": round(e, 3), "n_opp": len(live), "specs": [(None if q is None else round(q, 2), round(f, 2)) for q, f in specs],
+             "in_pos": in_pos,
              "e_call": {str(k): round(v, 3) for k, v in eq_cache.items()},
              "ev": {k: round(v) for k, v in evs.items()},
              "opp": {p["bot_id"]: OPPS[p["bot_id"]].summary() for p in live if p["bot_id"] in OPPS},
