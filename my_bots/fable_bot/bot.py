@@ -104,8 +104,8 @@ class Opp:
         """How much an opponent's aggression says about their hand: scaled by how
         often they fold at all. A player who never folds is not hand-selective."""
         folds = faced = 0
-        for ag in (False, True):
-            for f, n in self.ftb[(pre, ag)]:
+        for key in PRIOR:                      # all situations: does this player ever fold?
+            for f, n in self.ftb[key]:
                 folds += f
                 faced += n
         rate = (2 * 0.4 + folds) / (2 + faced)
@@ -528,7 +528,8 @@ def _decide(gs, t0):
         evs["fold"] = 0.0
         call_amt = min(owed, stack)
         ec = e if call_amt >= stack else e * realize
-        evs["call"] = ec * pot - (1 - ec) * call_amt - RISK * call_amt
+        # risk margin, doubled for the part of a call that exceeds the pot it wins
+        evs["call"] = ec * pot - (1 - ec) * call_amt - RISK * call_amt - RISK * max(0, 2 * call_amt - pot)
     else:
         evs["check"] = e * realize * pot
 
