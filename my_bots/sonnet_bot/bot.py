@@ -60,6 +60,16 @@ def _agg(state):
     return r / len(acts)
 
 
+def _raise_freq(state):
+    """Opponents' raise share over the recent match history (0.25 if unknown)."""
+    me = state["your_bot_id"]
+    acts = [a for a in state.get("match_action_log", [])
+            if a["bot_id"] != me and a["action"] in ("call", "raise", "all_in", "check")]
+    if len(acts) < 30:
+        return 0.25
+    return sum(1 for a in acts if a["action"] in ("raise", "all_in")) / len(acts)
+
+
 def decide(state):
     street = state["street"]
     hole = state["your_cards"]
@@ -88,16 +98,22 @@ def decide(state):
 
     # Facing aggression, opponents are stronger than random: shrink equity.
     agg = _agg(state)
+    scale = max(0.4, min(1.2, 1.25 - _raise_freq(state)))
     facing = owed > 0
     adj = eq
     if facing:
         bet_frac = owed / max(pot - owed, 1)
-        adj = eq - min(0.18, 0.06 + 0.10 * bet_frac) * (0.6 + agg)
+        adj = eq - min(0.18, 0.06 + 0.10 * bet_frac) * (0.6 + agg) * scale
+    # Re-raised after we already bet this street: range is strong.
+    if facing and street != "preflop" and any(
+            a["bot_id"] == state["your_bot_id"] and a["action"] in ("raise", "all_in")
+            for a in state["action_log"][-12:]):
+        adj -= 0.10 * scale
     # Random-hand equity is inflated multiway; fair share is 1/(n_opp+1).
     fair = 1.0 / (n_opp + 1)
     edge = adj - fair
 
-    debug = {"eq": round(eq, 3), "adj": round(adj, 3), "fair": round(fair, 3), "n": n_opp}
+    debug = {"eq": round(eq, 3), "adj": round(adj, 3), "fair": round(fair, 3), "n": n_opp, "sc": round(scale, 2)}
 
     def raise_to(frac):
         target = mybet + owed + int(frac * (pot + owed))
@@ -111,21 +127,22 @@ def decide(state):
         return a
 
     if street == "preflop":
+        bb = state["blinds"]["bb"]
         if facing:
-            to_call_frac = owed / max(stack + mybet, 1)
-            if edge > 0.20 or (edge > 0.12 and to_call_frac < 0.3):
-                if to_call_frac < 0.15 and edge > 0.20:
-                    return raise_to(1.0)
+            need = owed / (pot + owed)
+            if edge > 0.22 and owed < 0.15 * max_to:
+                return raise_to(1.0)
+            if adj > need + 0.05 and adj > fair + 0.03:
                 return act({"action": "call"})
-            if edge > 0.05 and owed <= state["blinds"]["bb"] * 2.5:
-                return act({"action": "call"})
+            if can_check:
+                return act({"action": "check"})
             return act({"action": "fold"})
         # Unopened / limped: raise good hands
-        if edge > 0.10:
+        if edge > 0.06:
             return raise_to(0.9)
         if can_check:
             return act({"action": "check"})
-        if edge > 0.02 and owed <= state["blinds"]["bb"]:
+        if edge > 0.0 and owed <= bb:
             return act({"action": "call"})
         return act({"action": "fold"})
 
