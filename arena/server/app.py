@@ -11,6 +11,7 @@ matches. This works for matches started from the CLI too.
 """
 
 import asyncio
+import sys
 import json
 import tempfile
 from contextlib import asynccontextmanager
@@ -27,7 +28,7 @@ from arena import bots as botlib
 from arena import formats, structures
 from arena.events import DEFAULT_RUNS_DIR, EVENTS_FILE, SUMMARY_FILE
 from arena.pacing import DEFAULT_PACE_MS
-from arena.server.jobs import JobManager
+from arena.server.jobs import JobManager, ServerStopping
 from arena.server.mcp_server import build_mcp
 from arena.server import status as status_rule
 from arena.server.progress import run_progress, series_progress
@@ -92,7 +93,14 @@ def create_app(runs_dir: Path = DEFAULT_RUNS_DIR, port: int = 8765) -> FastAPI:
     async def lifespan(app):
         async with mcp.session_manager.run():
             yield
-        jobs.shutdown()
+        # Let running jobs finish their files (match_end, summary, run.json) and
+        # stop their bots before the process exits.
+        running = sum(1 for j in jobs.jobs.values() if j.active)
+        if running:
+            print(f"Stopping {running} running job(s)...", file=sys.stderr, flush=True)
+        left = await asyncio.to_thread(jobs.shutdown)
+        if left:
+            print(f"Gave up waiting for: {', '.join(left)}", file=sys.stderr, flush=True)
 
     app = FastAPI(title="Poker Tournament Runner", version=arena.__version__, lifespan=lifespan)
     app.state.jobs = jobs
@@ -162,6 +170,8 @@ def create_app(runs_dir: Path = DEFAULT_RUNS_DIR, port: int = 8765) -> FastAPI:
             p["pace_ms"] = DEFAULT_PACE_MS
         try:
             job = jobs.start_match(p)
+        except ServerStopping as e:
+            raise HTTPException(503, str(e))
         except ValueError as e:
             bad_request(e)
         return {"job": job.to_dict(), "match_key": job.id, "seats": job.seats}
@@ -173,6 +183,8 @@ def create_app(runs_dir: Path = DEFAULT_RUNS_DIR, port: int = 8765) -> FastAPI:
             p["pace_ms"] = DEFAULT_PACE_MS if p["runs"] <= 1 else 0
         try:
             job = jobs.start_run(p)
+        except ServerStopping as e:
+            raise HTTPException(503, str(e))
         except (ValueError, TypeError) as e:
             bad_request(e)
         return {"job": job.to_dict(), "run_id": job.id, "kind": job.kind}
@@ -338,6 +350,10 @@ def create_app(runs_dir: Path = DEFAULT_RUNS_DIR, port: int = 8765) -> FastAPI:
             path = d / EVENTS_FILE
             while True:
                 if await request.is_disconnected():
+                    return
+                if jobs.stopping and idle >= 1.0:
+                    # don't hold the server's shutdown open; the log is final by now
+                    yield "event: end\ndata: {\"reason\": \"server_stopping\"}\n\n"
                     return
                 chunk = ""
                 if path.is_file():

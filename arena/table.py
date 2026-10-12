@@ -373,6 +373,9 @@ def play_match(seats, config: MatchConfig, match_id: str, log, pacer=None) -> di
         results.sort(key=lambda r: (r["place"] if r["place"] is not None else 99, r["bot"]))
         log.emit("match_end", hands=hand_num, duration_s=round(time.time() - t0, 2),
                  results=results, stopped=stopped)
+        # kept on the log so a caller still has the final standings if the
+        # match was cancelled or failed (they are also in match_end above)
+        log.final = {"results": results, "hands": hand_num, "stopped": stopped}
     return {"results": results, "hands": hand_num, "stopped": stopped}
 
 
@@ -425,8 +428,8 @@ def run_match(bot_specs, config: MatchConfig, match_id: str = None,
             summary = {
                 "kind": "match", "match_id": match_id, "seed": seed, "config": config.to_dict(),
                 "seats": [s.info() for s in seats],
-                "results": outcome["results"] if outcome else None,
-                "hands": outcome["hands"] if outcome else None,
+                "results": (outcome or getattr(log, "final", {})).get("results"),
+                "hands": (outcome or getattr(log, "final", {})).get("hands"),
                 "stopped": outcome["stopped"] if outcome else interrupted,
                 "duration_s": round(time.time() - t0, 2), "run_dir": str(run_dir),
                 "bot_diagnostics": diagnostics(seats),

@@ -181,6 +181,9 @@ def play_mtt(seats, match_cfg, table_size: int, match_id: str, log, workers: int
             t.log.end(hands=tick, results=[], stopped=stopped)
         log.emit("match_end", hands=tick, duration_s=round(time.time() - t0, 2),
                  results=results, stopped=stopped)
+        # kept on the log so a caller still has the final standings if the
+        # match was cancelled or failed (they are also in match_end above)
+        log.final = {"results": results, "hands": tick, "stopped": stopped}
     return {"results": results, "hands": tick, "stopped": stopped}
 
 
@@ -243,8 +246,8 @@ def play(cfg, ctx) -> dict:
                 "kind": "match", "match_id": MATCH_ID, "seed": match_cfg.seed,
                 "config": match_cfg.to_dict(), "format": "mtt", "table_size": cfg.table_size,
                 "seats": [s.info() for s in seats],
-                "results": outcome["results"] if outcome else None,
-                "hands": outcome["hands"] if outcome else None,
+                "results": (outcome or getattr(log, "final", {})).get("results"),
+                "hands": (outcome or getattr(log, "final", {})).get("hands"),
                 "stopped": outcome["stopped"] if outcome else interrupted,
                 "duration_s": round(time.time() - t0, 2), "run_dir": str(run_dir),
                 "bot_diagnostics": diagnostics(seats),

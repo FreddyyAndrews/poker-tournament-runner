@@ -589,8 +589,22 @@ def cmd_serve(args):
         threading.Timer(1.0, lambda: webbrowser.open(url)).start()
     # Only ever on this machine: bind to localhost.
     print(f"LLM seats over MCP: claude mcp add --transport http poker {url}/mcp", file=sys.stderr)
-    uvicorn.run(create_app(Path(args.out), port=args.port), host="127.0.0.1", port=args.port,
-                log_level="warning")
+    app = create_app(Path(args.out), port=args.port)
+
+    class Server(uvicorn.Server):
+        def handle_exit(self, sig, frame):
+            # Cancel running jobs first: their matches then end within moments,
+            # which also ends live streams, so the graceful shutdown that follows
+            # (closing connections, then waiting for jobs to write their files)
+            # doesn't wait on a paced match.
+            if not app.state.jobs.stopping:
+                n = app.state.jobs.begin_shutdown()
+                if n:
+                    print(f"\nStopping: cancelling {n} running job(s) and saving their results...",
+                          file=sys.stderr, flush=True)
+            super().handle_exit(sig, frame)
+
+    Server(uvicorn.Config(app, host="127.0.0.1", port=args.port, log_level="warning")).run()
 
 
 def cmd_bots(args):

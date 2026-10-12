@@ -37,6 +37,7 @@ class Job:
     matches_done: int = 0
     runs_done: int = 0
     cancel: threading.Event = field(default_factory=threading.Event)
+    thread: threading.Thread = None
 
     def to_dict(self):
         return {"id": self.id, "kind": self.kind, "status": self.status, "error": self.error,
@@ -54,11 +55,16 @@ def _stamp(prefix, seed):
     return f"{prefix}_{time.strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:4]}"
 
 
+class ServerStopping(Exception):
+    """Raised when a job is started while the server is shutting down."""
+
+
 class JobManager:
     def __init__(self, runs_dir: Path, hub: SeatHub = None):
         self.runs_dir = Path(runs_dir)
         self.hub = hub or SeatHub()
         self.jobs = {}
+        self.stopping = False
         self._lock = threading.Lock()
 
     # -- queries -------------------------------------------------------------
@@ -168,9 +174,25 @@ class JobManager:
             job.cancel.set()
         return job
 
-    def shutdown(self):
-        for j in self.jobs.values():
+    def begin_shutdown(self) -> int:
+        """Refuse new jobs and cancel running ones. Returns how many were running."""
+        self.stopping = True
+        running = [j for j in self.jobs.values() if j.active]
+        for j in running:
             j.cancel.set()
+        return len(running)
+
+    def shutdown(self, timeout: float = 30) -> list:
+        """Cancel running jobs and wait for their threads to finish, so every
+        match writes its match_end and summary, every run its final run.json,
+        and bot processes / containers are stopped. Returns the ids of jobs
+        still running after `timeout` (normally none)."""
+        self.begin_shutdown()
+        deadline = time.time() + timeout
+        for j in list(self.jobs.values()):
+            if j.thread is not None:
+                j.thread.join(max(0.0, deadline - time.time()))
+        return [j.id for j in self.jobs.values() if j.thread is not None and j.thread.is_alive()]
 
     # -- internals -----------------------------------------------------------
 
@@ -182,6 +204,8 @@ class JobManager:
 
     def _launch(self, job: Job, work) -> Job:
         with self._lock:
+            if self.stopping:
+                raise ServerStopping("the server is shutting down")
             self.jobs[job.id] = job
 
         def target():
@@ -200,5 +224,8 @@ class JobManager:
                 if job.kind != "match":
                     job.live.clear()
 
-        threading.Thread(target=target, name=f"job-{job.id}", daemon=True).start()
+        # Daemon so a stuck job can't keep the process alive forever; shutdown()
+        # joins these threads first so normal shutdowns finish their files.
+        job.thread = threading.Thread(target=target, name=f"job-{job.id}", daemon=True)
+        job.thread.start()
         return job
