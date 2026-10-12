@@ -85,7 +85,12 @@ def decide(game_state: dict) -> dict:
       your_bet_this_street int — chips you've already put in this street
       players          list  — public info on all seats (see below)
       action_log       list  — all actions so far this hand, each
-                               {"seat", "bot_id", "action", "amount"}
+                               {"seat", "bot_id", "action", "amount"},
+                               including "ante"/"small_blind"/"big_blind" posts.
+                               amount: raise/all_in = street total, call =
+                               chips added, check/fold = 0
+      match_action_log list  — last 200 action_log entries across the match
+                               (posts included), each with "hand_num" added
       hand_num         int   — hand number within the match
       blinds           dict  — {"sb", "bb", "ante"} for this hand
       button_seat, sb_seat, bb_seat  int — positions this hand

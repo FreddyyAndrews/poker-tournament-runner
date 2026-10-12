@@ -201,6 +201,31 @@ def test_decisions_record_logs_debug_and_what_the_bot_saw(tmp_path):
         assert "match_action_log" not in d["state"]
 
 
+def test_match_action_log_mirrors_action_log_with_posts(tmp_path):
+    bot = tmp_path / "watcher.py"
+    bot.write_text(textwrap.dedent("""
+        def decide(state):
+            if state.get("type") == "warmup":
+                return {}
+            return {"action": "call", "debug": {"match": state["match_action_log"],
+                                                "hand": state["action_log"]}}
+    """))
+    specs = botlib.resolve_all([str(bot), "aggressor", "shark"])
+    summary = run_match(specs, MatchConfig(hands=6, seed=4, structure=structures.flat(50, 100, 10)),
+                        match_id="m", runs_dir=tmp_path / "runs")
+    mine = [d for d in of_type(read_events(Path(summary["run_dir"])), "decision")
+            if d["bot"] == "watcher"]
+    assert mine
+    for d in mine:
+        match, hand = d["debug"]["match"], d["debug"]["hand"]
+        # this hand so far, posts included, is the tail of the match log
+        assert match[-len(hand):] == [{"hand_num": d["hand"], **a} for a in hand]
+        assert {a["action"] for a in hand} >= {"ante", "small_blind", "big_blind"}
+    last = mine[-1]["debug"]["match"]
+    assert {a["hand_num"] for a in last if a["action"] == "big_blind"} == \
+        {a["hand_num"] for a in last}
+
+
 def test_table_size_limits(tmp_path):
     with pytest.raises(ValueError):
         play(tmp_path, ["shark"], hands=1)

@@ -190,11 +190,13 @@ cp -r bots/template bots/mybot
 | `players` | `list` | Public info on all seats |
 | `your_bot_id` | `str` | Your bot's name. Stable across hands, unlike seat numbers |
 | `action_log` | `list` | Every action taken this hand, each `{"seat", "bot_id", "action", "amount"}` (including `ante`, `small_blind`, `big_blind` posts) |
-| `match_action_log` | `list` | The last 200 actions across all hands in this match, each `{"hand_num", "seat", "bot_id", "action", "amount"}` |
+| `match_action_log` | `list` | The last 200 entries across all hands in this match, including this hand so far: the same entries as `action_log` (posts included) plus `hand_num` |
 | `hand_num` | `int` | Hand number within the match |
 | `blinds` | `dict` | Current blinds, e.g. `{"sb": 50, "bb": 100, "ante": 0}` (these rise in tournaments) |
 | `button_seat` / `sb_seat` / `bb_seat` | `int` | Seats of the button and blinds; compare with `seat_to_act` for your position |
 | `time_limit_ms` | `int` | Your deadline for this decision |
+
+> **Action amounts:** for `raise` and `all_in`, `amount` is your total bet on this street (as in your reply). For `call` it is the chips added, for posts the chips posted, and for `check` and `fold` it is 0. Antes are dead money and don't count toward anyone's bet on the street.
 
 > **Seats vs. names:** seat numbers are positions at the table *for this hand*. When a player busts, the table is reseated and seat numbers shift. To track an opponent across hands, use `bot_id` (in `players`, `action_log` and `match_action_log`), not `seat`.
 

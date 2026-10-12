@@ -268,6 +268,10 @@ class Table:
                 kind = {"ante": "ante", "small_blind": "sb", "big_blind": "bb"}[e["action"]]
                 self._emit("post", hand=hand_num, bot=e["bot_id"], seat=e2t[e["seat"]],
                            kind=kind, amount=e["amount"])
+                # bots see posts in match_action_log just as in action_log
+                self.match_action_log.append({"hand_num": hand_num, "seat": e2t[e["seat"]],
+                                              "bot_id": e["bot_id"], "action": e["action"],
+                                              "amount": e["amount"]})
             elif t == "street_start" and e["street"] != "preflop":
                 self._emit("deal", hand=hand_num, street=e["street"], board=e["community_cards"])
             elif t == "showdown":

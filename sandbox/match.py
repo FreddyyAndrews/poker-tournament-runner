@@ -488,9 +488,19 @@ def run_match(match_id, bot_paths, n_hands=400, verbose=False, seed=None,
     }
 
 
+def _extend_match_log(engine, match_action_log, hand_num, start):
+    """Copy the engine's action_log entries from `start` (posts and applied
+    actions) into the match log. Returns the new count."""
+    for a in engine.action_log[start:]:
+        match_action_log.append({"hand_num": hand_num, **a})
+    return len(engine.action_log)
+
+
 def _play_hand(engine, procs, active_bots, match_action_log, hand_num, verbose,
                time_limit_ms=None):
-    state = _inject_match_log(engine.start_hand(), match_action_log)
+    state = engine.start_hand()
+    logged = _extend_match_log(engine, match_action_log, hand_num, 0)   # blind/ante posts
+    state = _inject_match_log(state, match_action_log)
     decisions = []
     steps = 0
     time_limit_ms = time_limit_ms or {}
@@ -520,15 +530,9 @@ def _play_hand(engine, procs, active_bots, match_action_log, hand_num, verbose,
             "error":          reply.get("error"),
             "error_detail":   reply.get("error_detail"),
         })
-        match_action_log.append({
-            "hand_num": hand_num,
-            "seat":     seat,
-            "bot_id":   bot_id,
-            "action":   action["action"],
-            "amount":   action.get("amount"),
-        })
-
-        state = _inject_match_log(engine.apply_action(seat, action), match_action_log)
+        state = engine.apply_action(seat, action)
+        logged = _extend_match_log(engine, match_action_log, hand_num, logged)
+        state = _inject_match_log(state, match_action_log)
         steps += 1
 
         if steps > 1000:
