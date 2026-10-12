@@ -22,6 +22,27 @@ test('play a match as a human from the browser', async ({ page, request }) => {
   // our own cards are face up; the opponent's are not revealed to us before showdown
   await expect(page.getByTestId('seat-You').getByTestId('card')).toHaveCount(2)
 
+  // playing live: no timeline or transport, just the live bar
+  await expect(page.getByTestId('play-bar')).toBeVisible()
+  await expect(page.getByTestId('scrubber')).toHaveCount(0)
+
+  // keyboard: C checks or calls on our turn, and the dock confirms it
+  await expect(bar).toContainText('Your turn', { timeout: 15_000 })
+  await page.keyboard.press('c')
+  await expect(bar).toContainText(/You (checked|called)/)
+
+  // review during our turn: controls appear, the banner shows our clock, and
+  // Back to the table returns to the live table and the dock
+  await expect(bar).toContainText('Your turn', { timeout: 15_000 })
+  await page.getByTestId('review').click()
+  await expect(page.getByTestId('review-banner')).toContainText("It's your turn")
+  await expect(page.getByTestId('scrubber')).toBeVisible()
+  await page.getByTestId('step-back').click()
+  await page.getByTestId('back-to-table').click()
+  await expect(page.getByTestId('play-bar')).toBeVisible()
+  await expect(page.getByTestId('scrubber')).toHaveCount(0)
+  await expect(bar).toContainText('Your turn')
+
   const key = decodeURIComponent(page.url().split('#/match/')[1].split('?')[0])
   const ev = await (await request.get(`/api/matches/${key}/events`)).json()
   expect(ev.events.filter((e: any) => e.type === 'decision' && e.bot === 'You').length).toBeGreaterThanOrEqual(3)

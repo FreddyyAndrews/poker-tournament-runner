@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, type SeatView } from '../api'
 import { ActionBar } from '../components/ActionBar'
 import { Controls } from '../components/Controls'
@@ -20,6 +20,8 @@ export function MatchView({ matchKey, seatToken, playAs }: { matchKey: string; s
   const pb = usePlayback(events, length, running, running)
   const [tab, setTab] = useState<Tab>('hand')
   const [showAll, setShowAll] = useState(!playAs)
+  const playing = !!seatToken
+  const [reviewing, setReviewing] = useState(false)   // playing, but looking back at earlier hands
   const [seat, setSeat] = useState<SeatView | null>(null)
   const [turn, setTurn] = useState<{ bot: string; kind: string; time_left_ms: number }[]>([])
 
@@ -65,10 +67,26 @@ export function MatchView({ matchKey, seatToken, playAs }: { matchKey: string; s
   }, [names])
   const totalHands = data.meta?.summary?.hands ?? handStarts.length
 
+  // Playing: the table stays live unless you choose to review, and your turn
+  // always brings you back.
+  // A turn that *starts* while you review brings you back; opening Review during
+  // your turn is allowed (the banner then shows your clock).
+  const myTurnNow = playing && !!seat?.pending
+  const pendingId = seat?.pending?.id ?? null
+  const lastPending = useRef<number | null>(null)
+  useEffect(() => {
+    if (!playing || !running) return
+    if (pendingId !== null && pendingId !== lastPending.current && reviewing) setReviewing(false)
+    lastPending.current = pendingId
+    if (!reviewing && !pb.live) pb.goLive()
+  }, [playing, running, pendingId, reviewing, pb])
+
   // Keyboard: space play/pause, arrows step, shift+arrows hands, L live.
+  // While playing live these keys belong to the action dock instead.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.target as HTMLElement).tagName === 'INPUT') return
+      if (playing && running && !reviewing) return
       if (e.key === ' ') { e.preventDefault(); pb.toggle() }
       else if (e.key === 'ArrowRight' && !e.shiftKey) pb.step(1)
       else if (e.key === 'ArrowLeft' && !e.shiftKey) pb.step(-1)
@@ -78,7 +96,7 @@ export function MatchView({ matchKey, seatToken, playAs }: { matchKey: string; s
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [pb, handStarts, length, running])
+  }, [pb, handStarts, length, running, playing, reviewing])
 
   if (data.error) return <div className="container"><h1>Match not found</h1><p className="muted">{data.error}</p></div>
 
@@ -122,7 +140,7 @@ export function MatchView({ matchKey, seatToken, playAs }: { matchKey: string; s
                       waitingFor={running && pb.live && turn[0] ? turn[0].bot : undefined} />
         </div>
 
-        {running && turn.length > 0 && !(seatToken && turn.some(t => t.bot === playAs)) && (
+        {running && turn.length > 0 && !(seatToken && turn.some(t => t.bot === playAs)) && !playing && (
           <div className="notice num" data-testid="waiting">
             Waiting for <b>{turn[0].bot}</b> ({turn[0].kind === 'mcp' ? 'LLM over MCP' : 'human'}),
             {' '}{Math.ceil(turn[0].time_left_ms / 1000)}s left
@@ -135,10 +153,38 @@ export function MatchView({ matchKey, seatToken, playAs }: { matchKey: string; s
             then ask it to call <code>list_open_seats</code> and play.
           </div>
         )}
-        {seatToken && <ActionBar token={seatToken} seat={seat} />}
+        {seatToken && !reviewing && (
+          <ActionBar token={seatToken} seat={seat}
+                     result={(() => {
+                       const r = data.meta?.summary?.results?.find(x => x.bot === playAs)
+                       return r ? { place: r.place, delta: r.delta } : null
+                     })()} />
+        )}
 
-        <Controls pb={pb} length={length} running={running} handStarts={handStarts}
-                  currentHand={state.hand} totalHands={totalHands} />
+        {playing && running && !reviewing ? (
+          <div className="play-bar num" data-testid="play-bar">
+            <span className="pill live"><span className="dot" />Live</span>
+            <span className="sub">Hand {state.hand !== null ? state.hand + 1 : '-'}</span>
+            {turn[0] && turn[0].bot !== playAs && <span className="muted">waiting for {turn[0].bot}</span>}
+            <span className="spacer" />
+            <button className="ghost" onClick={() => { setReviewing(true); pb.pause() }} data-testid="review">Review hands</button>
+          </div>
+        ) : (
+          <>
+            {playing && running && reviewing && (
+              <div className="review-banner" data-testid="review-banner">
+                {myTurnNow
+                  ? <span><b>It's your turn</b> ({Math.ceil((seat?.pending?.time_left_ms ?? 0) / 1000)}s left).</span>
+                  : <span>Reviewing earlier hands. The game is still going; your next turn brings you back.</span>}
+                <span className="spacer" />
+                <button className="primary small" onClick={() => setReviewing(false)} data-testid="back-to-table">
+                  Back to the table</button>
+              </div>
+            )}
+            <Controls pb={pb} length={length} running={running && !playing} handStarts={handStarts}
+                      currentHand={state.hand} totalHands={totalHands} />
+          </>
+        )}
       </div>
 
       <aside className="side">

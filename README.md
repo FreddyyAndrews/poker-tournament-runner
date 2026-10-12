@@ -143,7 +143,7 @@ For UI development run `poker serve` and `cd web && npm run dev` (Vite on port 5
 
 A seat can be played by **you** or by **an LLM over MCP** instead of a bot. Both use the same seat: when it's their turn the table waits (30 s for humans and 120 s for LLMs by default), and if time runs out they check or fold, logged as a timeout just like a bot.
 
-- **In the browser:** on **New**, add **You** and some bots, then **Start and play**. You get an action bar with Fold / Check / Call, a raise slider with Min, 1/2 pot and Pot, All-in, and a countdown. Opponents' cards stay face down until showdown.
+- **In the browser:** on **New**, add **You** and some bots, then **Start and play**. The table stays live (no playback controls). On your turn a dock shows what you need (to call, pot, pot odds, your stack, a countdown) and three big actions: **Fold**, **Check / Call** and **Raise to** (sized with Min, 1/2 pot, 3/4 pot, Pot and All-in chips, a slider or a typed amount). Keys: **F** fold, **C** check/call, **R** type a raise, **Enter** raise, **A** all-in. After you act it confirms what you did. **Review hands** shows the playback controls to look back; **Back to the table** (or your next turn) returns to the live game. Opponents' cards stay face down until showdown.
 - **In the terminal:** `poker play shark aggressor --hands 20` (add `--freezeout`, `--blinds`, `--stack`, `--seed`). Type `f`, `x`, `c`, `r 600`, `a`.
 - **An LLM over MCP:** `poker serve` also serves an MCP endpoint. Connect Claude Code (or any MCP client) with
 

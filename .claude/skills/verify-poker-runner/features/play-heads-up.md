@@ -28,6 +28,8 @@ Preconditions: a launched run with `verify_bot` created. The New page must list 
 
 ## Gotchas
 
+- While playing live there is no scrubber or transport (`[data-testid=play-bar]` instead). `[data-testid=review]` shows them with a `review-banner`; `back-to-table` hides them. A turn that starts while reviewing returns to the table. Keys on your turn: F, C (check/call), R (focus `raise-amount`), Enter (raise), A (all-in).
+
 - Human and LLM seats are only for single tables played once: the **You** and **An LLM** buttons are disabled for other formats, and the API answers 400.
 - Leaving the page doesn't stop the match. Your seat times out each decision; use **Stop** (or `POST /api/jobs/<key>/cancel`).
 - The action bar comes from the seat API, not the cursor. It appears on your turn even while you are scrubbing history.

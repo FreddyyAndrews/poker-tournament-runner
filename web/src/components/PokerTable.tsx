@@ -60,6 +60,8 @@ export function PokerTable({ state, showAll, colorOf, me, waitingFor }: Props) {
         const hidden = !showAll && !p.shown && p.name !== me
         const cls = ['seat',
           (waitingFor ? waitingFor === p.name : state.acting === p.name) ? 'acting' : '',
+          me === p.name ? 'me' : '',
+          me === p.name && waitingFor === p.name ? 'my-turn' : '',
           p.folded ? 'folded' : '',
           p.busted || (!p.inHand && state.hand !== null) ? 'out' : '',
           winners.has(p.name) ? 'winner' : ''].filter(Boolean).join(' ')
@@ -70,12 +72,12 @@ export function PokerTable({ state, showAll, colorOf, me, waitingFor }: Props) {
                  data-testid={`seat-${p.name}`}>
               <div className="cards">
                 {p.inHand && p.cards && !(p.folded && hidden) && p.cards.map((c, i) =>
-                  <Card key={i + c} card={c} back={hidden} />)}
+                  <Card key={i + c} card={c} back={hidden} size={me === p.name ? 'lg' : 'md'} />)}
                 {p.inHand && !p.cards && !p.folded && <><Card back /><Card back /></>}
               </div>
               <div className="plate">
                 <span className="swatch" style={{ background: colorOf(p.name) }} />
-                <span className="name" title={p.name}>{p.name}</span>
+                <span className="name" title={p.name}>{p.name}{me === p.name && p.name.toLowerCase() !== 'you' && <span className="you-tag">YOU</span>}</span>
                 {badge ? <span className="badge" title="Dealer button">{badge}</span> : <span />}
                 <span className="stack num">
                   {p.busted && p.place ? `Out · ${ord(p.place)}` : fmt(p.stack)}
