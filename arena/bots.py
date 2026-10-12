@@ -15,6 +15,38 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SEARCH_DIRS = [REPO_ROOT / "my_bots", REPO_ROOT / "bots"]
 
+_worktree_cache = {"at": 0.0, "dirs": []}
+
+
+def worktree_bot_dirs() -> list:
+    """my_bots/ folders of this repo's *other* git worktrees, as (path, branch).
+
+    Agents build bots in their own worktrees; the central server (run from the
+    main worktree) finds them here so everyone can play everyone. Cached for a
+    few seconds; empty if git isn't available."""
+    import subprocess
+    import time
+    if time.time() - _worktree_cache["at"] < 5:
+        return _worktree_cache["dirs"]
+    dirs = []
+    try:
+        out = subprocess.run(["git", "-C", str(REPO_ROOT), "worktree", "list", "--porcelain"],
+                             capture_output=True, text=True, timeout=5).stdout
+        path = branch = None
+        for line in out.splitlines() + [""]:
+            if line.startswith("worktree "):
+                path = Path(line[9:])
+            elif line.startswith("branch "):
+                branch = line[7:].removeprefix("refs/heads/")
+            elif not line and path is not None:
+                if path.resolve() != REPO_ROOT and (path / "my_bots").is_dir():
+                    dirs.append((path / "my_bots", branch or path.name))
+                path = branch = None
+    except (OSError, subprocess.SubprocessError):
+        pass
+    _worktree_cache.update(at=time.time(), dirs=dirs)
+    return dirs
+
 _NAME_OK = re.compile(r"[^A-Za-z0-9_.-]+")
 
 
@@ -64,14 +96,16 @@ def resolve(spec: str) -> tuple:
             raise ValueError(f"{spec}: expected a .py file, .zip, or directory")
         return str(p.resolve()), _default_name(p)
     if os.sep not in spec and "/" not in spec:
-        for d in SEARCH_DIRS:
+        # this worktree's my_bots/ and bots/ first, then other worktrees' my_bots/
+        for d in SEARCH_DIRS + [d for d, _ in worktree_bot_dirs()]:
             if (d / spec / "bot.py").is_file():          # folder: bot.py + optional data/
                 return str((d / spec).resolve()), spec
             for candidate in (d / spec / "bot.zip", d / (spec + ".py")):
                 if candidate.is_file():
                     return str(candidate.resolve()), spec
     searched = ", ".join(str(d.relative_to(REPO_ROOT)) + "/" for d in SEARCH_DIRS)
-    raise ValueError(f"Bot {spec!r} not found (not a path, and not a bot in {searched})")
+    raise ValueError(f"Bot {spec!r} not found (not a path, and not a bot in {searched} "
+                     "or another worktree's my_bots/)")
 
 
 REMOTE_KINDS = ("human", "mcp")
@@ -125,14 +159,18 @@ def resolve_all(specs, names=None, allow_remote=False) -> list:
 
 
 def available() -> list:
-    """Every bot found in my_bots/ and bots/, as (name, path, folder)."""
-    found = []
-    for d in SEARCH_DIRS:
+    """Every bot found in my_bots/ and bots/, then in other worktrees' my_bots/
+    (folder "worktree:<branch>"), as (name, path, folder). A name already found
+    earlier is not listed again (it would resolve to the earlier one)."""
+    found, seen = [], set()
+    for d, folder in [(d, d.name) for d in SEARCH_DIRS] + \
+                     [(d, f"worktree:{b}") for d, b in worktree_bot_dirs()]:
         if not d.is_dir():
             continue
         for sub in sorted(d.iterdir()):
             for candidate in (sub / "bot.py", sub / "bot.zip"):
-                if sub.is_dir() and candidate.is_file():
-                    found.append((sub.name, str(candidate), d.name))
+                if sub.is_dir() and candidate.is_file() and sub.name not in seen:
+                    found.append((sub.name, str(candidate), folder))
+                    seen.add(sub.name)
                     break
     return found

@@ -313,3 +313,25 @@ def test_cli_errors_are_clean(tmp_path):
     assert out.returncode == 2 and "not found" in out.stderr
     out = run_cli("verify", str(tmp_path / "missing"))
     assert out.returncode == 2 and "No match log" in out.stderr
+
+
+def test_bots_in_other_worktrees_are_found(tmp_path):
+    """The central server (main worktree) finds bots agents build in their own
+    git worktrees, lists them, and resolves them by name."""
+    import subprocess
+    from arena import bots as b
+    wt = tmp_path / "wt"
+    subprocess.run(["git", "-C", str(REPO), "worktree", "add", "--detach", str(wt), "HEAD"],
+                   check=True, capture_output=True)
+    try:
+        (wt / "my_bots" / "wt_test_bot").mkdir(parents=True)
+        (wt / "my_bots" / "wt_test_bot" / "bot.py").write_text("def decide(s):\n    return {'action': 'fold'}\n")
+        b._worktree_cache["at"] = 0
+        listed = {n: f for n, _, f in b.available()}
+        assert listed.get("wt_test_bot", "").startswith("worktree:")
+        path, name = b.resolve("wt_test_bot")
+        assert name == "wt_test_bot" and Path(path) == (wt / "my_bots" / "wt_test_bot").resolve()
+        assert b.resolve("shark")[0] == str((REPO / "bots" / "shark").resolve())   # local wins
+    finally:
+        subprocess.run(["git", "-C", str(REPO), "worktree", "remove", "--force", str(wt)], capture_output=True)
+        b._worktree_cache["at"] = 0
