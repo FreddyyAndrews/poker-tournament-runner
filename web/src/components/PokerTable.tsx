@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { TableState } from '../replay/state'
 import { Card } from './Card'
-import { ChipStack } from './Chips'
+import { ChipIcon, ChipStack, denominationsIn } from './Chips'
 
 export const playerColor = (i: number) => `var(--p${Math.min(i, 8)})`
 
@@ -162,6 +162,24 @@ export function PokerTable({ state, showAll, colorOf, me, waitingFor, prev, anim
           </div>
         )
       })}
+      {(() => {
+        // Legend: only the chip values drawn on the table right now.
+        const legend = denominationsIn([
+          ...players.filter(p => p.stack > 0).map(p => [p.stack, 8, 4] as [number, number, number]),
+          ...players.filter(p => p.bet > 0).map(p => [p.bet, 8, 3] as [number, number, number]),
+          ...(state.pot > 0 ? [[state.pot, 12, 5] as [number, number, number]] : []),
+          ...flights.map(f => [f.amount, 5, 3] as [number, number, number]),
+        ])
+        return legend.length > 0 && (
+          <div className="chip-legend" data-testid="chip-legend" aria-label="Chip values">
+            {legend.map(d => (
+              <span key={d.value} className="item" data-value={d.value}>
+                <ChipIcon d={d} /><span className="num">{d.label}</span>
+              </span>
+            ))}
+          </div>
+        )
+      })()}
       {flights.map(f => (
         <div key={f.id} className="pile flight"
              style={{

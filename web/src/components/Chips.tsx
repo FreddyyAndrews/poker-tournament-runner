@@ -85,3 +85,23 @@ export function ChipStack({ amount, maxPerColumn = 10, maxColumns = 4, title }: 
     </svg>
   )
 }
+
+/** One chip of a denomination, for legends. */
+export function ChipIcon({ d }: { d: (typeof DENOMS)[number] }) {
+  const w = RX * 2 + 2, h = RY * 2 + T + 2
+  return (
+    <svg className="chips" width={w} height={h} viewBox={`0 0 ${w} ${h}`} aria-hidden>
+      <Chip cx={1 + RX} y={1 + RY} d={d} />
+    </svg>
+  )
+}
+
+/** The denominations a set of piles actually draws, smallest first. Each entry
+ * is [amount, maxPerColumn, maxColumns] exactly as that pile is drawn. */
+export function denominationsIn(piles: [number, number, number][]) {
+  const used = new Set<number>()
+  for (const [amount, perCol, cols] of piles) {
+    for (const c of breakdown(amount, perCol, cols)) used.add(c.d.value)
+  }
+  return DENOMS.filter(d => used.has(d.value)).reverse()
+}

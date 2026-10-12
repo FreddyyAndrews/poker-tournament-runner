@@ -22,6 +22,11 @@ test('play a match as a human from the browser', async ({ page, request }) => {
   // our own cards are face up; the opponent's are not revealed to us before showdown
   await expect(page.getByTestId('seat-You').getByTestId('card')).toHaveCount(2)
 
+  // the chip legend lists only the values drawn on the table (10,000 stacks: 1k chips, no 5k)
+  const legend = page.getByTestId('chip-legend')
+  await expect(legend.locator('[data-value="1000"]')).toBeVisible()
+  await expect(legend.locator('[data-value="5000"]')).toHaveCount(0)
+
   // playing live: no timeline or transport, just the live bar
   await expect(page.getByTestId('play-bar')).toBeVisible()
   await expect(page.getByTestId('scrubber')).toHaveCount(0)
@@ -76,6 +81,9 @@ test('leave a live game and come back to your seat', async ({ page, browser, req
   await expect(page).toHaveURL(/\?seat=.+&as=You/)
   await expect(page.getByTestId('action-bar')).toBeVisible()
   await expect(page.getByTestId('play-bar')).toBeVisible()
+
+  // the opponent's hole cards show card backs while the hand is live
+  await expect(page.getByTestId('seat-shark').getByTestId('card-back')).toHaveCount(2)
 
   // another browser with nothing remembered is offered the open seat
   const other = await browser.newContext()

@@ -122,7 +122,7 @@ poker match shark aggressor --pace 600    # runs on the server; open the watch l
 
 **Recent** lists every match, tournament and series. Open a match to watch it:
 
-- **Table:** cards dealt, the acting bot outlined, showdowns with hand names and winners, and **chips**: each player's stack beside their seat, bets in front of them and the pot in the middle, drawn as columns of coloured chips (25 green, 100 black, 500 purple, 1k yellow, 5k orange, 25k blue, 100k pink, 1M white; hover a pile for its breakdown). Chips fly from a stack into a bet, from the bets into the pot, and from the pot to the winner, whose stack grows.
+- **Table:** cards dealt, the acting bot outlined, showdowns with hand names and winners, and **chips**: each player's stack beside their seat, bets in front of them and the pot in the middle, drawn as columns of coloured chips (25 green, 100 black, 500 purple, 1k yellow, 5k orange, 25k blue, 100k pink, 1M white; a legend in the corner shows the values on the table right now, and hovering a pile gives its breakdown). Chips fly from a stack into a bet, from the bets into the pot, and from the pot to the winner, whose stack grows.
 - **Realtime with history:** a running match shows **LIVE** and follows each action as it happens. Scrub, step or replay earlier hands at any time, then press **Go live** to jump back to now.
 - **Controls:** play/pause, step, previous/next hand, a timeline with hand markers, speeds from 0.5x to 32x. Keys: Space, Left/Right, Shift+Left/Right, L.
 - **Hand log** of the current hand, a **decision inspector** (what the bot saw, what it returned, how it was applied, think time, its logs and `debug`), a **stack chart** and live **standings**.
