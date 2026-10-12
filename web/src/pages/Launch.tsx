@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { playerColor } from '../components/PokerTable'
+import { rememberSeat, seatHash } from '../seatMemory'
 import type { Level } from '../types'
 
 type Format = 'table' | 'bracket' | 'round_robin' | 'mtt'
@@ -141,9 +142,8 @@ export function Launch() {
         const r = await post('/api/matches', { ...common, names: undefined,
           time_limits: { human: humanSecs * 1000, mcp: llmSecs * 1000 } })
         const me = (r.seats ?? []).find((x: any) => x.kind === 'human')
-        location.hash = me
-          ? `#/match/${r.match_key}?seat=${encodeURIComponent(me.token)}&as=${encodeURIComponent(me.name)}`
-          : `#/match/${r.match_key}`
+        if (me) rememberSeat(r.match_key, me.token, me.name)
+        location.hash = me ? seatHash(r.match_key, me.token, me.name) : `#/match/${r.match_key}`
       } else {
         const r = await post('/api/runs', {
           ...common, format, name: name.trim() || undefined, runs, workers: series ? workers : (pace ? 1 : workers),

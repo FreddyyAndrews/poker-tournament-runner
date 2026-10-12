@@ -59,3 +59,31 @@ test('LLM seat shows how to connect', async ({ page, request }) => {
   const key = decodeURIComponent(page.url().split('#/match/')[1])
   await request.post(`/api/jobs/${key}/cancel`)
 })
+
+test('leave a live game and come back to your seat', async ({ page, browser, request }) => {
+  await page.goto('/#/new')
+  await page.getByTestId('add-human').click()
+  await page.getByTestId('add-shark').click()
+  await page.getByTestId('pace-600').click()
+  await page.getByTestId('launch-btn').click()
+  await expect(page).toHaveURL(/\?seat=/)
+  const key = decodeURIComponent(page.url().split('#/match/')[1].split('?')[0])
+  await expect(page.getByTestId('action-bar')).toBeVisible()
+
+  // leave, then come back through Recent (a plain match link): back in the seat
+  await page.goto('/#/')
+  await page.getByTestId('run-row').filter({ hasText: key }).click()
+  await expect(page).toHaveURL(/\?seat=.+&as=You/)
+  await expect(page.getByTestId('action-bar')).toBeVisible()
+  await expect(page.getByTestId('play-bar')).toBeVisible()
+
+  // another browser with nothing remembered is offered the open seat
+  const other = await browser.newContext()
+  const p2 = await other.newPage()
+  await p2.goto(`/#/match/${key}`)
+  await p2.getByTestId('play-as-You').click()
+  await expect(p2).toHaveURL(/\?seat=.+&as=You/)
+  await expect(p2.getByTestId('action-bar')).toBeVisible()
+  await other.close()
+  await request.post(`/api/jobs/${key}/cancel`)
+})

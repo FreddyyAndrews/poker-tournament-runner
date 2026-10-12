@@ -169,3 +169,13 @@ def test_llm_plays_over_mcp(client):
     mine = [e for e in ev if e["type"] == "decision" and e["bot"] == "claude"]
     assert len(mine) == turns and all(e["logs"] == "test" for e in mine)
     assert client.get(f"/api/verify/{m['match_key']}").json()["ok"]
+
+
+def test_open_seats_can_be_found_by_match(client):
+    a = client.post("/api/matches", json={"bots": ["human:Ann", "mathematician"], "hands": 50, "pace_ms": 0,
+                                          "id": "rj1"}).json()
+    client.post("/api/matches", json={"bots": ["human:Bo", "shark"], "hands": 50, "pace_ms": 0, "id": "rj2"})
+    seats = client.get("/api/seats", params={"kind": "human", "match": "rj1"}).json()
+    assert [(x["name"], x["token"]) for x in seats] == [("Ann", a["seats"][0]["token"])]
+    for job in ("rj1", "rj2"):
+        client.post(f"/api/jobs/{job}/cancel")

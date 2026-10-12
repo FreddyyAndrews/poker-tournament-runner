@@ -33,6 +33,8 @@ export const api = {
   streamUrl: (key: string, from: number, as?: string) =>
     `/api/matches/${k(key)}/stream?from=${from}${as ? `&as=${encodeURIComponent(as)}` : ''}`,
   seat: (token: string) => get<SeatView>(`/api/seats/${encodeURIComponent(token)}`),
+  openSeats: (matchKey: string, kind = 'human') =>
+    get<(SeatView & { token: string })[]>(`/api/seats?kind=${kind}&match=${encodeURIComponent(matchKey)}`),
   act: (token: string, body: { action: string; amount?: number; decision_id?: number }) =>
     post(`/api/seats/${encodeURIComponent(token)}/act`, body),
   turn: (key: string) => get<{ bot: string; kind: string; time_left_ms: number; time_limit_ms: number }[]>(

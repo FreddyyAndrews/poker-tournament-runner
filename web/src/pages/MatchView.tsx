@@ -8,6 +8,7 @@ import { PokerTable, playerColor } from '../components/PokerTable'
 import { StackChart } from '../components/StackChart'
 import { Standings } from '../components/Standings'
 import { useMatch } from '../replay/useMatch'
+import { forgetSeat, rememberSeat, rememberedSeat, seatHash } from '../seatMemory'
 import { usePlayback } from '../replay/usePlayback'
 
 type Tab = 'hand' | 'decision' | 'chart'
@@ -21,6 +22,29 @@ export function MatchView({ matchKey, seatToken, playAs }: { matchKey: string; s
   const [tab, setTab] = useState<Tab>('hand')
   const [showAll, setShowAll] = useState(!playAs)
   const playing = !!seatToken
+  const [openSeats, setOpenSeats] = useState<{ name: string; token: string }[]>([])
+
+  // Holding a seat: remember it. Not holding one: if this browser remembers a
+  // seat in this (live) match, take it back; otherwise offer any open human seat.
+  useEffect(() => {
+    if (seatToken && playAs) { rememberSeat(matchKey, seatToken, playAs); return }
+    if (status !== 'running') return
+    let alive = true
+    const saved = rememberedSeat(matchKey)
+    ;(async () => {
+      if (saved) {
+        try {
+          const sv = await api.seat(saved.token)
+          if (alive && !sv.finished) { location.replace(seatHash(matchKey, saved.token, saved.name)); return }
+        } catch { forgetSeat(matchKey) }
+      }
+      try {
+        const seats = await api.openSeats(matchKey)
+        if (alive) setOpenSeats(seats.map(x => ({ name: x.name, token: x.token })))
+      } catch { /* offer nothing */ }
+    })()
+    return () => { alive = false }
+  }, [matchKey, seatToken, playAs, status])
   const [reviewing, setReviewing] = useState(false)   // playing, but looking back at earlier hands
   const [seat, setSeat] = useState<SeatView | null>(null)
   const [turn, setTurn] = useState<{ bot: string; kind: string; time_left_ms: number }[]>([])
@@ -151,6 +175,17 @@ export function MatchView({ matchKey, seatToken, playAs }: { matchKey: string; s
             {remoteSeats.filter(s => s.kind === 'mcp').map(s => s.name).join(', ')} {remoteSeats.filter(s => s.kind === 'mcp').length > 1 ? 'are' : 'is'} played
             by an LLM over MCP. Connect one with <code>claude mcp add --transport http poker {location.origin}/mcp</code>,
             then ask it to call <code>list_open_seats</code> and play.
+          </div>
+        )}
+        {!seatToken && running && openSeats.length > 0 && (
+          <div className="notice rejoin" data-testid="rejoin">
+            <span>This match has an open seat for a human player.</span>
+            <span className="spacer" />
+            {openSeats.map(o => (
+              <button key={o.token} className="primary small" data-testid={`play-as-${o.name}`}
+                      onClick={() => { rememberSeat(matchKey, o.token, o.name); location.hash = seatHash(matchKey, o.token, o.name) }}>
+                Play as {o.name}</button>
+            ))}
           </div>
         )}
         {seatToken && !reviewing && (

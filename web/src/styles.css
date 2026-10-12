@@ -426,3 +426,5 @@ table.rr .live-dot { position: absolute; top: 5px; right: 5px; width: 6px; heigh
 .play-bar .spacer, .review-banner .spacer { flex: 1; }
 .review-banner { display: flex; align-items: center; gap: 12px; border: 1px solid var(--line-strong); border-radius: var(--radius);
                  padding: 8px 12px; font-size: 13px; color: var(--text-2); background: var(--surface); }
+.notice.rejoin { display: flex; align-items: center; gap: 12px; border-color: var(--text); color: var(--text); }
+.notice.rejoin .spacer { flex: 1; }

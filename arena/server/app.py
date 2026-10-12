@@ -302,9 +302,11 @@ def create_app(runs_dir: Path = DEFAULT_RUNS_DIR, port: int = 8765) -> FastAPI:
                 "pending": seat.pending()}
 
     @app.get("/api/seats")
-    def list_seats(kind: Optional[str] = None):
+    def list_seats(kind: Optional[str] = None, match: Optional[str] = None):
+        """Open remote seats (this server is local-only). `match` narrows it to one
+        match, e.g. so the UI can offer to rejoin a seat you left."""
         return [{**seat_view(s), "token": s.token, "pending": s.pending() is not None}
-                for s in jobs.hub.open_seats(kind)]
+                for s in jobs.hub.open_seats(kind) if match is None or s.match_key == match]
 
     @app.get("/api/seats/{token}")
     def get_seat(token: str):
