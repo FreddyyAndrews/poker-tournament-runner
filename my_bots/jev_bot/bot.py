@@ -9,8 +9,7 @@ management, no equity calculation and no opponent modelling on purpose: this
 version measures how far Jev's judgment alone gets.
 
 Needs network access, so it only runs locally (never in the Docker sandbox).
-API key: JEV_API_KEY or TYPESAFE_API_KEY in the environment or in a .env file
-in a parent directory of this file.
+API key: JEV_API_KEY in the environment or in the repo root .env.
 
 Env knobs:
   JEV_MODEL              model id or alias (default jev-latest)
@@ -20,37 +19,18 @@ Env knobs:
 import json
 import os
 import time
+from pathlib import Path
 
 import httpx
+from dotenv import load_dotenv
 
 BOT_NAME = "jev_bot"
 API_URL = "https://api.typesafe.ai/v1/systemone"
 
 
 # ── Config ───────────────────────────────────────────────────────────────────
-def _load_dotenv():
-    """Load KEY=VALUE lines from the nearest .env above this file; never overrides."""
-    d = os.path.dirname(os.path.abspath(__file__))
-    for _ in range(6):
-        path = os.path.join(d, ".env")
-        if os.path.isfile(path):
-            try:
-                with open(path) as f:
-                    for line in f:
-                        line = line.strip()
-                        if not line or line.startswith("#") or "=" not in line:
-                            continue
-                        k, v = line.split("=", 1)
-                        k, v = k.strip(), v.strip().strip('"').strip("'")
-                        os.environ.setdefault(k, v)
-            except OSError:
-                pass
-            return
-        d = os.path.dirname(d)
-
-
-_load_dotenv()
-API_KEY = os.environ.get("JEV_API_KEY") or os.environ.get("TYPESAFE_API_KEY")
+load_dotenv(Path(__file__).resolve().parents[2] / ".env")   # repo root, never overrides
+API_KEY = os.environ.get("JEV_API_KEY")
 MODEL = os.environ.get("JEV_MODEL", "jev-latest")
 SAFETY_MS = int(os.environ.get("JEV_SAFETY_MS", "400"))
 INCLUDE_MATCH_LOG = os.environ.get("JEV_INCLUDE_MATCH_LOG", "1") != "0"

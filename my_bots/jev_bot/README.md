@@ -21,7 +21,7 @@ One `POST https://api.typesafe.ai/v1/systemone` per decision:
 Each decision's `debug` holds the model id, latency, confidence, the full probability distribution over
 actions and sizes, and token usage, so the UI's decision inspector shows exactly what Jev thought.
 
-Config: `JEV_API_KEY` (or `TYPESAFE_API_KEY`) from the environment or a `.env` up the tree, `JEV_MODEL`
+Config: `JEV_API_KEY` from the environment or the repo root `.env`, `JEV_MODEL`
 (default `jev-latest`), `JEV_SAFETY_MS` (time kept free under the deadline, default 400).
 
 ## v1 results (jev-1.13.0, local, 50/100 cash)
