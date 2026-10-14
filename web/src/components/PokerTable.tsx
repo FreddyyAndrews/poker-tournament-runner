@@ -25,10 +25,27 @@ function toward(p: { x: number; y: number }, t: number) {
 
 type Pt = { x: number; y: number }
 
-// Where a player's chips sit: to the right of their nameplate (to the left for
-// seats near the right edge), so neighbouring seats' piles never meet.
+// Where a player's chips sit. Along the long top and bottom edges: beside the
+// nameplate (on the side away from the right edge, so neighbouring piles never
+// meet). At the short ends a pile beside the plate would sit in the middle of
+// the table, so it goes above the seat's cards (upper half) or below its action
+// line (lower half), away from the other seat on that end. The seat is a fixed
+// pixel size, so those offsets are in pixels; `at` is the approximate point in
+// table percentages, used for chip flights.
+const END_GAP_PX = 76          // seat centre to just past its cards / action line
+function isEnd(pos: Pt) { return Math.abs(pos.x - 50) > 30 }
 function stackPos(pos: Pt): Pt {
+  if (isEnd(pos)) return { x: pos.x, y: pos.y + (pos.y < 47 ? -16 : 16) }
   return { x: pos.x + (pos.x > 75 ? -13.5 : 13.5), y: pos.y + 3.5 }
+}
+function pileStyle(pos: Pt): React.CSSProperties {
+  if (!isEnd(pos)) {
+    const sp = stackPos(pos)
+    return { left: `${sp.x}%`, top: `${sp.y}%` }
+  }
+  return pos.y < 47
+    ? { left: `${pos.x}%`, top: `calc(${pos.y}% - ${END_GAP_PX}px)` }                         // above: anchored at its bottom
+    : { left: `${pos.x}%`, top: `calc(${pos.y}% + ${END_GAP_PX}px)`, transform: 'translate(-50%, 0)' }   // below: at its top
 }
 const POT_POS: Pt = { x: 46, y: 60 }   // where the pot's chips sit, left of the label
 // The table box is 2 : 1.08, so 1% of its height is 0.54% of its width.
@@ -146,15 +163,12 @@ export function PokerTable({ state, showAll, colorOf, me, waitingFor, prev, anim
                   : p.lastAction}
               </div>
             </div>
-            {p.stack > 0 && (() => {
-              const sp = stackPos(pos)
-              return (
-                <div className={'pile' + (p.folded || !p.inHand ? ' dim' : '')}
-                     style={{ left: `${sp.x}%`, top: `${sp.y}%` }} data-testid={`stack-${p.name}`}>
-                  <ChipStack amount={p.stack} maxPerColumn={8} />
-                </div>
-              )
-            })()}
+            {p.stack > 0 && (
+              <div className={'pile' + (p.folded || !p.inHand ? ' dim' : '')}
+                   style={pileStyle(pos)} data-testid={`stack-${p.name}`}>
+                <ChipStack amount={p.stack} maxPerColumn={8} />
+              </div>
+            )}
             {p.bet > 0 && (
               <div className="bet-pile" style={{ left: `${betPos.x}%`, top: `${betPos.y}%` }}
                    data-testid={`bet-${p.name}`}>
