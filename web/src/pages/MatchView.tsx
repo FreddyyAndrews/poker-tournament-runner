@@ -183,7 +183,7 @@ export function MatchView({ matchKey, seatToken, playAs }: { matchKey: string; s
           <div className="notice" data-testid="mcp-notice">
             {remoteSeats.filter(s => s.kind === 'mcp').map(s => s.name).join(', ')} {remoteSeats.filter(s => s.kind === 'mcp').length > 1 ? 'are' : 'is'} played
             by an LLM over MCP. Connect one with <code>claude mcp add --transport http poker {location.origin}/mcp</code>,
-            then ask it to call <code>list_open_seats</code> and play.
+            then ask it to call <code>list_open_seats</code>, <code>claim_seat</code> and play. Each seat takes one LLM.
           </div>
         )}
         {!seatToken && running && openSeats.length > 0 && (

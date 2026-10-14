@@ -138,7 +138,7 @@ def test_llm_plays_over_mcp(client):
     async def play():
         async with Client(mcp) as c:
             names = [t.name for t in (await c.list_tools()).tools]
-            assert {"start_match", "wait_for_turn", "act", "list_open_seats"} <= set(names)
+            assert {"start_match", "wait_for_turn", "act", "list_open_seats", "claim_seat"} <= set(names)
 
             def data(r):
                 assert not r.is_error and len(r.content) == 1      # one JSON object per tool call
@@ -146,7 +146,7 @@ def test_llm_plays_over_mcp(client):
             m = data(await c.call_tool("start_match", {"opponents": ["mathematician"], "hands": 3}))
             assert m["seat"] == "claude" and m["match_key"]
             open_seats = data(await c.call_tool("list_open_seats", {}))["seats"]
-            assert any(s["token"] == m["token"] for s in open_seats)
+            assert not any(s["match_key"] == m["match_key"] for s in open_seats)   # yours, so not open
             assert any(b["name"] == "shark" for b in data(await c.call_tool("list_bots", {}))["bots"])
             turns = 0
             while True:
@@ -179,3 +179,66 @@ def test_open_seats_can_be_found_by_match(client):
     assert [(x["name"], x["token"]) for x in seats] == [("Ann", a["seats"][0]["token"])]
     for job in ("rj1", "rj2"):
         client.post(f"/api/jobs/{job}/cancel")
+
+
+def test_each_llm_seat_is_claimed_by_one_agent_and_two_llms_play_each_other(client):
+    """Two LLM seats at one table: each agent claims a different seat, nobody can
+    take a claimed seat, tokens are never listed, and the two play to the end."""
+    mcp = client.app.state.mcp
+    client.post("/api/matches", json={"bots": ["mcp:alpha", "mcp:beta"], "mode": "cash", "hands": 3,
+                                      "pace_ms": 0, "id": "duel"})
+
+    def data(r):
+        assert not r.is_error
+        return json.loads(r.content[0].text)
+
+    async def play(c, token):
+        turns = 0
+        while True:
+            t = data(await c.call_tool("wait_for_turn", {"token": token, "timeout_s": 10}))
+            if t["status"] == "match_over":
+                return turns, t["results"]
+            if t["status"] == "your_turn":
+                turns += 1
+                act = "check" if "check" in t["legal"] else "call"
+                assert data(await c.call_tool("act", {"token": token, "action": act,
+                                                      "decision_id": t["decision_id"]}))["ok"]
+
+    async def duel():
+        async with Client(mcp) as a, Client(mcp) as b:
+            listed = data(await a.call_tool("list_open_seats", {}))["seats"]
+            mine = [x for x in listed if x["match_key"] == "duel"]
+            assert sorted(x["seat"] for x in mine) == ["alpha", "beta"]
+            assert all("token" not in x for x in listed)                       # tokens are never listed
+            got_a = data(await a.call_tool("claim_seat", {"match_key": "duel", "seat": "alpha"}))
+            assert got_a["ok"] and got_a["token"]
+            taken = data(await b.call_tool("claim_seat", {"match_key": "duel", "seat": "alpha"}))
+            assert not taken["ok"] and "already taken" in taken["error"]
+            assert [x["seat"] for x in data(await b.call_tool("list_open_seats", {}))["seats"]
+                    if x["match_key"] == "duel"] == ["beta"]
+            got_b = data(await b.call_tool("claim_seat", {"match_key": "duel", "seat": "beta"}))
+            assert got_b["ok"] and got_b["token"] != got_a["token"]
+            assert not [x for x in data(await a.call_tool("list_open_seats", {}))["seats"]
+                        if x["match_key"] == "duel"]
+            assert client.post("/api/seats/claim", json={"match": "duel", "seat": "beta"}).status_code == 409
+            return await asyncio.gather(play(a, got_a["token"]), play(b, got_b["token"]))
+
+    (ta, ra), (tb, rb) = asyncio.run(duel())
+    assert ta > 0 and tb > 0 and {r["bot"] for r in ra} == {"alpha", "beta"}
+    assert client.get("/api/verify/duel").json()["ok"]
+
+
+def test_http_claim_and_using_a_token_claims_the_seat(client):
+    m = client.post("/api/matches", json={"bots": ["mcp:x", "mcp:y", "shark"], "hands": 50, "pace_ms": 0,
+                                          "id": "clm"}).json()
+    tok = {s["name"]: s["token"] for s in m["seats"]}
+    listed = client.get("/api/seats", params={"kind": "mcp", "match": "clm"}).json()
+    assert sorted(x["name"] for x in listed) == ["x", "y"] and all("token" not in x for x in listed)
+    client.get(f"/api/seats/{tok['x']}")                                    # the creator uses x's token
+    r = client.post("/api/seats/claim", json={"match": "clm", "seat": "x"})
+    assert r.status_code == 409
+    r = client.post("/api/seats/claim", json={"match": "clm", "seat": "y"})
+    assert r.status_code == 200 and r.json()["token"] == tok["y"]
+    assert client.get("/api/seats", params={"kind": "mcp", "match": "clm"}).json() == []
+    assert client.post("/api/seats/claim", json={"match": "clm", "seat": "nobody"}).status_code == 409
+    client.post("/api/jobs/clm/cancel")

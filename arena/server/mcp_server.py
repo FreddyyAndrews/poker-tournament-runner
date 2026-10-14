@@ -5,8 +5,10 @@ Served by `poker serve` at http://127.0.0.1:<port>/mcp (streamable HTTP):
 
     claude mcp add --transport http poker http://127.0.0.1:8765/mcp
 
-Typical loop: start_match (or list_open_seats for a seat someone created in
-the UI), then repeat wait_for_turn -> act until the match is over.
+Typical loop: start_match (or list_open_seats + claim_seat for a seat someone
+created in the UI), then repeat wait_for_turn -> act until the match is over.
+Each seat is played by one agent: claim_seat hands a seat's token to exactly one
+caller, and claimed seats disappear from list_open_seats.
 """
 
 import asyncio
@@ -18,8 +20,10 @@ from mcp.server.mcpserver import MCPServer
 from arena.events import SUMMARY_FILE
 
 INSTRUCTIONS = """You are playing No-Limit Texas Hold'em against poker bots.
-1. Call start_match with the opponents you want (see list_bots), or list_open_seats
-   to find an MCP seat that was created for you in the web UI.
+1. Call start_match with the opponents you want (see list_bots). Or, to join a
+   match someone else set up, call list_open_seats and then claim_seat(match_key, seat)
+   to get that seat's token. A seat belongs to whoever claims it first; if the claim
+   fails, pick another open seat. Never use a token you did not get yourself.
 2. Loop: wait_for_turn(token) until status is "your_turn" or "match_over".
    When it is your turn, read `summary` and `legal`, then call act(token, action, amount).
    amount is the TOTAL you are raising to, not the raise size.
@@ -125,17 +129,30 @@ def build_mcp(jobs, runs_dir: Path, base_url: str = "http://127.0.0.1:8765") -> 
              "time_limits": {"mcp": time_limit_ms}}
         job = jobs.start_match(p)
         seat = job.seats[0]
+        jobs.hub.get(seat["token"]).claim()          # your seat; any other mcp: seats stay open
         return {"match_key": job.id, "token": seat["token"], "seat": seat["name"],
                 "time_limit_ms": seat["time_limit_ms"],
                 "watch_url": f"{base_url}/#/match/{job.id}"}
 
     @mcp.tool()
     async def list_open_seats() -> dict:
-        """MCP seats waiting for a player (e.g. created on the web UI's New page)."""
-        return {"seats": [{"seat": s.name, "match_key": s.match_key, "token": s.token,
-                           "your_turn_now": s.pending() is not None,
+        """MCP seats nobody has claimed yet (e.g. created on the web UI's New page,
+        or as mcp: opponents in another agent's start_match). Take one with claim_seat."""
+        return {"seats": [{"seat": s.name, "match_key": s.match_key,
+                           "waiting_on_this_seat": s.pending() is not None,
                            "watch_url": f"{base_url}/#/match/{s.match_key}"}
                           for s in jobs.hub.open_seats("mcp")]}
+
+    @mcp.tool()
+    async def claim_seat(match_key: str, seat: str) -> dict:
+        """Take an open seat (from list_open_seats) for yourself and get its token.
+        Only one player can claim a seat: if someone already has it, choose another."""
+        try:
+            s = jobs.hub.claim(match_key, seat)
+        except ValueError as e:
+            return {"ok": False, "error": str(e)}
+        return {"ok": True, "match_key": s.match_key, "seat": s.name, "token": s.token,
+                "time_limit_ms": s.time_limit_ms, "watch_url": f"{base_url}/#/match/{s.match_key}"}
 
     @mcp.tool()
     async def wait_for_turn(token: str, timeout_s: float = 60) -> dict:
@@ -143,7 +160,7 @@ def build_mcp(jobs, runs_dir: Path, base_url: str = "http://127.0.0.1:8765") -> 
         Returns status "your_turn" (with summary, legal actions, state, decision_id,
         time_left_ms), "match_over" (with results), or "waiting" (call again)."""
         seat = seat_or_error(token)
-        seat.joined = True
+        seat.claim()                                  # using a token claims the seat
         deadline = asyncio.get_running_loop().time() + max(1.0, min(timeout_s, 600))
         while True:
             p = seat.pending()
@@ -170,6 +187,7 @@ def build_mcp(jobs, runs_dir: Path, base_url: str = "http://127.0.0.1:8765") -> 
         Pass the decision_id from wait_for_turn to be sure you act on that decision.
         reasoning (optional) is saved with the decision and shown in the replay."""
         seat = seat_or_error(token)
+        seat.claim()
         if action not in ("fold", "check", "call", "raise", "all_in"):
             return {"ok": False, "error": "action must be fold, check, call, raise or all_in"}
         if action == "raise" and amount is None:

@@ -8,6 +8,11 @@ logged with error "timeout", exactly like a bot timeout.
 
 Seats are found by an unguessable token, created when the match is started
 (only on this machine; the server binds to localhost).
+
+An LLM seat belongs to one agent: it is claimed the first time its token is
+used, or explicitly with claim_seat, and claimed seats are no longer offered to
+anyone else (list_open_seats hides them and never shows tokens). Human seats are
+not claimed: whoever is at this machine can rejoin them from the browser.
 """
 
 import secrets
@@ -35,7 +40,7 @@ class RemoteSeat(Seat):
         self._timeouts = 0
         self._think_total = 0.0
         self.finished = False
-        self.joined = False         # someone has looked at / claimed the seat
+        self.claimed = False        # an agent holds this seat's token (see claim)
 
     # -- table side ------------------------------------------------------------
 
@@ -80,6 +85,14 @@ class RemoteSeat(Seat):
                 "restarts": 0, "disabled": False}
 
     # -- player side -------------------------------------------------------------
+
+    def claim(self) -> bool:
+        """Mark the seat as taken. True only for the caller that took it."""
+        with self._lock:
+            if self.claimed:
+                return False
+            self.claimed = True
+            return True
 
     def pending(self):
         """The decision waiting for this seat, or None."""
@@ -126,5 +139,19 @@ class SeatHub:
         return [s for s in self.by_token.values() if s.match_key == match_key]
 
     def open_seats(self, kind: str = None) -> list:
+        """Unfinished seats someone can still take: every human seat (rejoining
+        from the browser), and LLM seats that nobody has claimed."""
         return [s for s in self.by_token.values()
-                if not s.finished and (kind is None or s.kind == kind)]
+                if not s.finished and (kind is None or s.kind == kind)
+                and not (s.kind == "mcp" and s.claimed)]
+
+    def claim(self, match_key: str, name: str, kind: str = "mcp") -> RemoteSeat:
+        """Claim an open seat by match and seat name; raises ValueError if there
+        is no such seat or another agent already has it."""
+        seat = next((s for s in self.by_token.values()
+                     if s.match_key == match_key and s.name == name and s.kind == kind), None)
+        if seat is None or seat.finished:
+            raise ValueError(f"no open {kind} seat {name!r} in match {match_key!r}")
+        if not seat.claim():
+            raise ValueError(f"seat {name!r} in match {match_key!r} is already taken by another player")
+        return seat

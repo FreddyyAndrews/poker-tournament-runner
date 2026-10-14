@@ -61,6 +61,11 @@ class ActRequest(BaseModel):
     note: Optional[str] = None             # optional reasoning, saved as the decision's logs
 
 
+class ClaimRequest(BaseModel):
+    match: str                             # match key
+    seat: str                              # seat name, e.g. "llm2"
+
+
 class RunRequest(BaseModel):
     format: str
     bots: List[str]
@@ -305,18 +310,29 @@ def create_app(runs_dir: Path = DEFAULT_RUNS_DIR, port: int = 8765) -> FastAPI:
     def list_seats(kind: Optional[str] = None, match: Optional[str] = None):
         """Open remote seats (this server is local-only). `match` narrows it to one
         match, e.g. so the UI can offer to rejoin a seat you left."""
-        return [{**seat_view(s), "token": s.token, "pending": s.pending() is not None}
+        return [{**seat_view(s), "pending": s.pending() is not None,
+                 **({"token": s.token} if s.kind == "human" else {})}
                 for s in jobs.hub.open_seats(kind) if match is None or s.match_key == match]
+
+    @app.post("/api/seats/claim")
+    def claim_seat(req: ClaimRequest):
+        """Take an open LLM seat (one agent per seat). Returns its token."""
+        try:
+            seat = jobs.hub.claim(req.match, req.seat)
+        except ValueError as e:
+            raise HTTPException(409, str(e))
+        return {**seat_view(seat), "token": seat.token}
 
     @app.get("/api/seats/{token}")
     def get_seat(token: str):
         seat = seat_or_404(token)
-        seat.joined = True
+        seat.claim()                    # using a token claims the seat
         return seat_view(seat)
 
     @app.post("/api/seats/{token}/act")
     def seat_act(token: str, req: ActRequest):
         seat = seat_or_404(token)
+        seat.claim()
         if not seat.submit(req.action, req.amount, note=req.note, decision_id=req.decision_id):
             raise HTTPException(409, "it is not this seat's turn (or that decision has passed)")
         return {"ok": True}

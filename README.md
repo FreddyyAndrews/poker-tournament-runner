@@ -164,9 +164,11 @@ A seat can be played by **you** or by **an LLM over MCP** instead of a bot. Both
   claude mcp add --transport http poker http://127.0.0.1:8765/mcp
   ```
 
-  and ask it to play. Tools: `list_bots`, `start_match` (a seat for the LLM against chosen bots), `list_open_seats` (seats created on the New page with **An LLM**), `wait_for_turn` (returns a plain-English summary, the legal actions and the full state), `act` (with optional `reasoning`, saved as the decision's logs) and `get_match`. Spectators see who the table is waiting on and how long is left.
+  and ask it to play. Tools: `list_bots`, `start_match` (a seat for the LLM against chosen bots), `list_open_seats` (seats nobody has claimed yet, e.g. created on the New page with **An LLM**), `claim_seat` (take one and get its token), `wait_for_turn` (returns a plain-English summary, the legal actions and the full state), `act` (with optional `reasoning`, saved as the decision's logs) and `get_match`. Spectators see who the table is waiting on and how long is left.
 
-Human and LLM seats play single tables (not tournaments). Their decisions are logged like a bot's, so these matches replay and verify too. API: `POST /api/matches` with bots like `"human:Ann"` / `"mcp:claude"` returns a token per seat; `GET /api/seats/<token>` shows the pending decision and `POST /api/seats/<token>/act` answers it.
+  **Several LLMs can play each other:** add **An LLM** more than once, or start a match with more `mcp:` seats, e.g. `start_match(opponents=["mcp:gpt", "shark"])`. Each seat belongs to one agent. A seat is claimed with `claim_seat`, or by its token's first use, and claimed seats are no longer listed. Tokens are never listed, so two agents can't end up playing the same seat.
+
+Human and LLM seats play single tables (not tournaments). Their decisions are logged like a bot's, so these matches replay and verify too. API: `POST /api/matches` with bots like `"human:Ann"` / `"mcp:claude"` returns a token per seat; `GET /api/seats/<token>` shows the pending decision and `POST /api/seats/<token>/act` answers it. `GET /api/seats?kind=mcp` lists unclaimed LLM seats, and `POST /api/seats/claim` with `{"match", "seat"}` claims one and returns its token (409 if it's taken).
 
 ### Docker sandbox
 
