@@ -17,3 +17,5 @@ node_modules/
 .bot_mounts/
 data/
 *.egg-info/
+
+references/
