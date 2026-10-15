@@ -9,6 +9,9 @@ const Icon = {
   nextHand: <svg viewBox="0 0 16 16"><path d="M8 3v10l7-5zM1 3v10l7-5z" /></svg>,
 }
 
+// A notable moment on the timeline, e.g. the start of a hand that went to showdown.
+export type Highlight = { index: number; kind: 'showdown'; label: string }
+
 type Props = {
   pb: Playback
   length: number
@@ -16,9 +19,10 @@ type Props = {
   handStarts: number[]       // event indices of hand_start
   currentHand: number | null
   totalHands: number
+  highlights?: Highlight[]
 }
 
-export function Controls({ pb, length, running, handStarts, currentHand, totalHands }: Props) {
+export function Controls({ pb, length, running, handStarts, currentHand, totalHands, highlights = [] }: Props) {
   const prevHand = () => {
     const before = handStarts.filter(i => i < pb.cursor)
     // within the first few events of a hand, go to the previous hand
@@ -34,6 +38,15 @@ export function Controls({ pb, length, running, handStarts, currentHand, totalHa
 
   return (
     <div className="controls" data-testid="controls">
+      {length > 1 && highlights.length > 0 && (
+        <div className="marks" data-testid="highlights">
+          {highlights.map(h => (
+            <button key={h.index} className={`mark ${h.kind}`} title={h.label} aria-label={h.label}
+                    style={{ left: `calc(7px + (100% - 14px) * ${h.index / max})` }}
+                    onClick={() => pb.seek(h.index)} />
+          ))}
+        </div>
+      )}
       <div className="scrub">
         <div className="ticks">
           {length > 1 && handStarts.length < 400 && handStarts.map(i =>

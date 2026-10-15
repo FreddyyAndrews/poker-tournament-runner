@@ -109,3 +109,21 @@ test('cash game shows each bot\'s running net, matching the final results', asyn
   await expect(page.getByTestId('tab-chart')).toHaveText('Net')
   await expect(page.getByTestId('stack-chart')).toHaveAttribute('data-mode', 'net')
 })
+
+test('showdown highlights on the timeline jump to the start of that hand', async ({ page, request }) => {
+  const key = await startMatch(request, {
+    bots: ['template', 'template', 'mathematician'], hands: 15, seed: 3, pace_ms: 0, id: 'e2e_highlights' })
+  await waitDone(request, key)
+  const { events } = await (await request.get(`/api/matches/${key}/events`)).json()
+  const showdowns = events.filter((e: { type: string }) => e.type === 'showdown').length
+  expect(showdowns).toBeGreaterThan(0)
+
+  await page.goto(`/#/match/${key}`)
+  await expect(page.getByTestId('status')).toHaveText('Complete')
+  const marks = page.getByTestId('highlights').locator('.mark.showdown')
+  await expect(marks).toHaveCount(showdowns)
+  const label = await marks.last().getAttribute('title')
+  const hand = Number(/^Hand (\d+) showdown/.exec(label!)![1])
+  await marks.last().click()
+  await expect(page.getByTestId('position')).toContainText(`Hand ${hand} of 15`)
+})

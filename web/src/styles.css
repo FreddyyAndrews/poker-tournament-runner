@@ -214,6 +214,11 @@ table.list td.r, table.list th.r { text-align: right; }
                                                  border-radius: 50%; background: var(--text); }
 .scrub input[type=range]::-moz-range-track { height: 4px; background: var(--surface-3); border-radius: 2px; }
 .scrub input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border: 0; border-radius: 50%; background: var(--text); }
+.marks { position: relative; height: 10px; margin-bottom: -6px; }
+.marks .mark { position: absolute; top: 1px; width: 8px; height: 8px; margin-left: -4px; padding: 0;
+               border: 0; border-radius: 50%; cursor: pointer; }
+.marks .mark.showdown { background: var(--warn); }
+.marks .mark:hover { transform: scale(1.4); }
 .position { color: var(--text-2); font-size: 12px; }
 .live-btn { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; }
 .live-btn .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }

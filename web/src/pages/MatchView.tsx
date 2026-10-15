@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, type SeatView } from '../api'
 import { ActionBar } from '../components/ActionBar'
-import { Controls } from '../components/Controls'
+import { Controls, type Highlight } from '../components/Controls'
 import { HandLog } from '../components/HandLog'
 import { Inspector } from '../components/Inspector'
 import { PokerTable, playerColor } from '../components/PokerTable'
@@ -61,6 +61,19 @@ export function MatchView({ matchKey, seatToken, playAs }: { matchKey: string; s
   const handStarts = useMemo(() => {
     const out: number[] = []
     timeline.list.forEach((e, i) => { if (e.type === 'hand_start') out.push(i) })
+    return out
+  }, [timeline, length])
+  // Hands that reached showdown, marked at their hand_start.
+  const highlights = useMemo(() => {
+    const out: Highlight[] = []
+    let from = 0
+    timeline.list.forEach((e, i) => {
+      if (e.type === 'hand_start') from = i
+      else if (e.type === 'showdown') {
+        const shown = Object.keys(e.reveal).map(n => e.ranks[n] ? `${n} (${e.ranks[n]})` : n)
+        out.push({ index: from, kind: 'showdown', label: `Hand ${e.hand + 1} showdown: ${shown.join(' vs ')}` })
+      }
+    })
     return out
   }, [timeline, length])
   const handFrom = useMemo(() => {
@@ -226,7 +239,7 @@ export function MatchView({ matchKey, seatToken, playAs }: { matchKey: string; s
               </div>
             )}
             <Controls pb={pb} length={length} running={running && !playing} handStarts={handStarts}
-                      currentHand={state.hand} totalHands={totalHands} />
+                      currentHand={state.hand} totalHands={totalHands} highlights={highlights} />
           </>
         )}
       </div>
