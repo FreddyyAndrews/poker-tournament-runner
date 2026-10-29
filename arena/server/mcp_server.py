@@ -123,6 +123,8 @@ def build_mcp(jobs, runs_dir: Path, base_url: str = "http://127.0.0.1:8765") -> 
         mode: "cash" (each hand from the starting stack), "fixed" (stacks carry over)
         or "freezeout" (until one player has every chip; use blinds "turbo"/"standard").
         pace_ms > 0 slows the bots down so people can watch.
+        opponents=["gto_wizard"] plays GTO Wizard AI heads-up instead (its game:
+        200bb at 50/100, stacks reset every hand; mode, blinds and stack are ignored).
         Returns your seat token; then call wait_for_turn(token)."""
         p = {"bots": [f"mcp:{seat_name}", *opponents], "mode": mode, "hands": hands,
              "blinds": blinds, "starting_stack": starting_stack, "pace_ms": pace_ms,

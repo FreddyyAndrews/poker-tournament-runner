@@ -16,6 +16,7 @@ from pathlib import Path
 
 from arena import bots as botlib
 from arena import formats
+from arena import gtow
 from arena.pacing import Cancelled
 from arena.remote import RemoteSeat, SeatHub
 from arena.series import run_series
@@ -95,6 +96,8 @@ class JobManager:
         Bots may include "human:Name" / "mcp:Name" seats. Validates before
         starting (raises ValueError). Returns the job; job.seats lists the
         remote seats (name, kind, token)."""
+        if any(gtow.is_gtow(b) for b in p["bots"]):
+            return self._start_gtow_match(p)
         specs = botlib.resolve_all(p["bots"], names=p.get("names"), allow_remote=True)
         if not 2 <= len(specs) <= 9:
             raise ValueError(f"A table needs 2-9 players, got {len(specs)}")
@@ -109,19 +112,54 @@ class JobManager:
         match_id = p.get("id") or _stamp("match", config.seed)
         self._check_new(match_id)
         job = Job(id=match_id, kind="match", params=p, live=[match_id])
-        limits = p.get("time_limits") or {}
-        for i, spec in enumerate(specs):
-            if isinstance(spec, botlib.RemoteSpec):
-                seat = RemoteSeat(spec.name, spec.kind, time_limit_ms=limits.get(spec.kind), cancel=job.cancel)
-                self.hub.add(seat, match_id)
-                specs[i] = seat
-                job.seats.append({"name": seat.name, "kind": seat.kind, "token": seat.token,
-                                  "time_limit_ms": seat.time_limit_ms})
+        specs = [self._remote_seat(job, spec, p) for spec in specs]
 
         def work():
             run_match(specs, config, match_id=match_id, runs_dir=self.runs_dir,
                       use_docker=True if p.get("docker") else None,
                       pace_ms=p.get("pace_ms") or 0, cancel=job.cancel)
+            job.matches_done = 1
+
+        return self._launch(job, work)
+
+    def _remote_seat(self, job: Job, spec, p: dict):
+        """A RemoteSeat for a human/MCP spec (registered with the hub and listed
+        on the job); any other spec as it is."""
+        if not isinstance(spec, botlib.RemoteSpec):
+            return spec
+        limits = p.get("time_limits") or {}
+        seat = RemoteSeat(spec.name, spec.kind, time_limit_ms=limits.get(spec.kind), cancel=job.cancel)
+        self.hub.add(seat, job.id)
+        job.seats.append({"name": seat.name, "kind": seat.kind, "token": seat.token,
+                          "time_limit_ms": seat.time_limit_ms})
+        return seat
+
+    def _start_gtow_match(self, p: dict) -> Job:
+        """One player against GTO Wizard (see arena/gtow.py). GTO Wizard sets
+        the game, so mode and stack are ignored, and freezeout, other blinds
+        and seeds are refused rather than silently changed."""
+        hero, idx = gtow.split_specs(p["bots"])
+        if p.get("mode") == "freezeout" or p.get("seed") is not None or \
+                (p.get("blinds") or "50/100") not in ("50/100", "50/100/0"):
+            raise ValueError("GTO Wizard sets the game (heads-up, 200bb at 50/100, stacks reset "
+                             "every hand): freezeout, blinds and seeds don't apply")
+        try:
+            gtow.api_key()
+        except gtow.GTOWizardError as e:
+            raise ValueError(str(e)) from None
+        names = p.get("names") or []
+        name = names[idx] if idx < len(names) else None
+        spec = botlib.resolve_all([hero], names=[name], allow_remote=True)[0]
+        match_id = p.get("id") or _stamp("gtow", None)
+        self._check_new(match_id)
+        job = Job(id=match_id, kind="match", params=p, live=[match_id])
+        spec = self._remote_seat(job, spec, p)
+
+        def work():
+            gtow.run_gtow_match(spec, p.get("hands") or 100, match_id=match_id,
+                                runs_dir=self.runs_dir, use_docker=True if p.get("docker") else None,
+                                pace_ms=p.get("pace_ms") or 0, cancel=job.cancel,
+                                time_limit_ms=p.get("time_limit_ms"), workers=p.get("workers"))
             job.matches_done = 1
 
         return self._launch(job, work)

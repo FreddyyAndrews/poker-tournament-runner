@@ -3,6 +3,8 @@ responses: no network, and none of the monthly hand quota."""
 import json
 import os
 import sys
+import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -20,24 +22,47 @@ HANDS = json.loads((Path(__file__).parent / "fixtures" / "gtow_hands.json").read
 
 
 class FakeClient:
-    """Replays recorded hands, checking that we send what was sent then."""
+    """Replays recorded hands (in order, repeating), checking that we send what
+    was sent then. Safe to use from several threads, like the real API."""
 
-    def __init__(self, hands=HANDS):
-        self.hands = list(hands)
-        self.current = None
-        self.sent = []
+    def __init__(self, hands=HANDS, delay_s=0.0, strict=True):
+        self.hands = hands
+        self.strict = strict        # False: answer with the recording whatever we send
+        self.started = 0
+        self.open = {}              # hand_id -> responses still to come
+        self.in_play = self.max_in_play = 0
+        self.delay_s = delay_s
+        self.lock = threading.Lock()
 
     def new_hand(self):
-        self.current = list(self.hands.pop(0))
-        return self.current.pop(0)
+        with self.lock:
+            seq = [json.loads(json.dumps(r)) for r in self.hands[self.started % len(self.hands)]]
+            self.started += 1
+            hand_id = 1000 + self.started
+            for r in seq:
+                r["hand_id"] = hand_id
+            first = seq.pop(0)
+            self.open[hand_id] = seq
+            self._track(first)
+        return first
 
     def act(self, hand_id, action, amount=None):
-        resp = self.current.pop(0)
-        assert resp["hand_id"] == hand_id
+        time.sleep(self.delay_s)
+        with self.lock:
+            resp = self.open[hand_id].pop(0)
+            self._track(resp)
         body = {"action": action} if amount is None else {"action": action, "amount": amount}
-        assert body == resp["sent"], f"sent {body}, the recording sent {resp['sent']}"
-        self.sent.append(body)
+        assert body == resp["sent"] or not self.strict, \
+            f"sent {body}, the recording sent {resp['sent']}"
         return resp
+
+    def _track(self, resp):
+        """Count hands in play: one starts with each new_hand, ends when over."""
+        if "sent" not in resp:
+            self.in_play += 1
+            self.max_in_play = max(self.max_in_play, self.in_play)
+        if resp["game_state"]["is_hand_over"]:
+            self.in_play -= 1
 
 
 class Caller(Seat):
@@ -54,9 +79,10 @@ class Caller(Seat):
         return {"action": "call", "think_ms": 1.0, "logs": "", "debug": {"n": len(self.seen)}}
 
 
-def play(tmp_path, seat=None, hands=len(HANDS)):
+def play(tmp_path, seat=None, hands=len(HANDS), workers=1, client=None):
     seat = seat or Caller()
-    summary = gtow.run_gtow_match(seat, hands, match_id="g", runs_dir=tmp_path, client=FakeClient())
+    summary = gtow.run_gtow_match(seat, hands, match_id="g", runs_dir=tmp_path,
+                                  client=client or FakeClient(), workers=workers)
     return seat, summary, read_events(Path(summary["run_dir"]))
 
 
@@ -130,6 +156,43 @@ def test_gto_wizard_decisions_are_logged_with_what_it_saw(tmp_path):
     assert ours[0]["reply"] == {"action": "call"} and ours[0]["debug"] == {"n": 1}
 
 
+def test_concurrent_hands_are_logged_in_order(tmp_path):
+    client = FakeClient(delay_s=0.002)
+    seat, summary, events = play(tmp_path, hands=20, workers=4, client=client)
+    assert client.max_in_play > 1 and summary["workers"] == 4
+    # every hand's events are contiguous and in hand order
+    hands = [e["hand"] for e in events if "hand" in e and e["type"] != "level"]
+    assert hands == sorted(hands) and len(of_type(events, "hand_start")) == 20
+    # same results as playing the recording one hand at a time, four times over
+    ends = of_type(events, "hand_end")
+    winnings = [h[-1]["game_state"]["winnings"] for h in HANDS] * 4
+    assert [e["deltas"]["caller"] for e in ends] == winnings
+    report = verify_match_dir(Path(summary["run_dir"]))
+    assert report["ok"], report["problems"]
+    # match_action_log holds earlier hands (those already logged) and this one
+    for s in seat.seen:
+        assert {a["hand_num"] for a in s["match_action_log"]} <= set(range(s["hand_num"] + 1))
+        own = [a for a in s["match_action_log"] if a["hand_num"] == s["hand_num"]]
+        assert [{k: a[k] for k in ("bot_id", "action", "amount")} for a in own] == \
+            [{k: a[k] for k in ("bot_id", "action", "amount")} for a in s["action_log"]]
+
+
+def test_workers_default_to_one_when_watched_or_played_live():
+    assert gtow.default_workers(Caller()) == gtow.DEFAULT_WORKERS
+    assert gtow.default_workers(Caller(), pace_ms=600) == 1
+    human = Caller()
+    human.kind = "human"
+    assert gtow.default_workers(human) == 1
+
+
+def test_specs_must_be_one_player_against_gto_wizard():
+    assert gtow.split_specs(["shark", "gto_wizard"]) == ("shark", 0)
+    assert gtow.split_specs(["GTO_Wizard", "human:Me"]) == ("human:Me", 1)
+    for bad in (["shark", "aggressor", "gto_wizard"], ["gto_wizard", "gto_wizard"], ["gto_wizard"]):
+        with pytest.raises(ValueError, match="heads-up"):
+            gtow.split_specs(bad)
+
+
 @pytest.mark.parametrize("reply, owed, legal, expected", [
     ({"action": "fold"}, 0, ["k", "b"], ("k", None)),        # GTO Wizard won't take a free fold
     ({"action": "fold"}, 100, ["f", "c", "b"], ("f", None)),
@@ -162,3 +225,65 @@ def test_tracker_all_in_and_runout(tmp_path):
     assert t.apply("b20000")["action"] == "all_in"
     call = t.apply("c")
     assert call == {"bot": "b", "action": "call", "amount": 19900, "pot_after": 40000, "stack_after": 0}
+
+
+# ---------------------------------------------------------------------------
+# On the server: POST /api/matches with "gto_wizard" as the opponent
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def jobs(tmp_path, monkeypatch):
+    from arena.server.jobs import JobManager
+    monkeypatch.setenv("GTO_WIZARD_API_KEY", "test-key")
+    # real bots don't play like the recording, so take its answers regardless
+    monkeypatch.setattr(gtow, "Client", lambda: FakeClient(strict=False))
+    return JobManager(tmp_path)
+
+
+def test_server_job_plays_a_bot_against_gto_wizard(jobs, tmp_path):
+    job = jobs.start_match({"bots": ["ref_bot_2", "gto_wizard"], "names": ["me", None],
+                            "mode": "cash", "hands": 7, "starting_stack": 10000, "workers": 3})
+    job.thread.join(30)
+    assert job.status == "complete", job.error
+    summary = json.loads((tmp_path / job.id / "summary.json").read_text())
+    assert summary["dealer"] == "gto_wizard" and summary["hands"] == 7 and summary["workers"] == 3
+    assert {r["bot"] for r in summary["results"]} == {"me", "gto_wizard"}
+    assert job.id.startswith("gtow_")
+
+
+def test_server_job_gives_a_human_seat_against_gto_wizard(jobs):
+    job = jobs.start_match({"bots": ["human:Ann", "gto_wizard"], "hands": 1})
+    assert [s["name"] for s in job.seats] == ["Ann"] and job.seats[0]["kind"] == "human"
+    seat = jobs.hub.get(job.seats[0]["token"])
+    # hand 1 of the recording: GTO Wizard folds its small blind, so Ann never acts
+    job.thread.join(30)
+    assert job.status == "complete", job.error
+    assert seat.pending() is None
+
+
+@pytest.mark.parametrize("p, match", [
+    ({"bots": ["shark", "aggressor", "gto_wizard"]}, "heads-up"),
+    ({"bots": ["shark", "gto_wizard"], "mode": "freezeout"}, "sets the game"),
+    ({"bots": ["shark", "gto_wizard"], "blinds": "100/200"}, "sets the game"),
+    ({"bots": ["shark", "gto_wizard"], "seed": 3}, "sets the game"),
+])
+def test_server_refuses_what_gto_wizard_cant_play(jobs, p, match):
+    with pytest.raises(ValueError, match=match):
+        jobs.start_match(p)
+
+
+def test_server_refuses_without_a_key(jobs, monkeypatch):
+    monkeypatch.delenv("GTO_WIZARD_API_KEY")
+    monkeypatch.setattr(gtow, "REPO_ENV", Path("/nonexistent/.env"))
+    with pytest.raises(ValueError, match="GTO_WIZARD_API_KEY"):
+        jobs.start_match({"bots": ["shark", "gto_wizard"]})
+
+
+def test_cli_refuses_flags_that_change_the_game(capsys):
+    from arena import cli
+    with pytest.raises(SystemExit):
+        cli.main(["match", "shark", "gto_wizard", "--stack", "5000", "--local"])
+    assert "--stack" in capsys.readouterr().err
+    with pytest.raises(SystemExit):
+        cli.main(["match", "shark", "aggressor", "--workers", "3", "--local"])
+    assert "only applies to matches against gto_wizard" in capsys.readouterr().err

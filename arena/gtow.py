@@ -22,9 +22,11 @@ Its action_history uses "f", "k", "c", "bX" (X = total bet on the street) and
 
 import json
 import os
+import threading
 import time
 import urllib.error
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import eval7
@@ -42,6 +44,8 @@ GAME_NAME = "HUNL 200BB"
 NAME = "gto_wizard"                 # GTO Wizard's name in our logs
 API_NAME = "GTO Wizard"             # ... and in the API's player list
 STARTING_STACK, SB, BB = 20_000, 50, 100
+DEFAULT_WORKERS = 5                 # hands in play at once (as GTO Wizard's own client)
+MAX_WORKERS = 20                    # GTO Wizard's limit
 
 REPO_ENV = Path(__file__).resolve().parent.parent / ".env"
 BOARD_LEN = {"preflop": 0, "flop": 3, "turn": 4, "river": 5}
@@ -255,8 +259,30 @@ class GTOWizardSeat(Seat):
                 "game_name": GAME_NAME}
 
 
+class _Hand:
+    """One hand's events and match-log entries. Emitted as they happen when
+    hands play one at a time; buffered when several play at once, then
+    flushed in hand order, so the log always reads hand by hand."""
+
+    def __init__(self, num: int, emit=None):
+        self.num = num
+        self.live_emit = emit
+        self.events = []
+        self.actions = []          # this hand's match_action_log entries
+
+    def emit(self, event_type, **data):
+        if self.live_emit is not None:
+            self.live_emit(event_type, **data)
+        else:
+            self.events.append((event_type, data))
+
+
 class GTOWizardMatch:
-    """Plays `hands` hands between one seat and GTO Wizard, logging every event."""
+    """Plays hands between one seat and GTO Wizard, logging every event.
+
+    Several hands may be in play at once (play_hand from worker threads): the
+    seat is asked for one decision at a time, and what it sees in
+    match_action_log is every hand already flushed plus the current one."""
 
     def __init__(self, seat: Seat, client: Client, log: EventLog, match_id: str, pacer=None):
         self.seat, self.client, self.log, self.match_id, self.pacer = seat, client, log, match_id, pacer
@@ -264,6 +290,8 @@ class GTOWizardMatch:
         self.seats = {seat.name: 0, NAME: 1}
         self.blinds = {"sb": SB, "bb": BB, "ante": 0}
         self.match_action_log = []
+        self._seat_lock = threading.Lock()     # one decision at a time
+        self._count_lock = threading.Lock()
 
     def _emit(self, event_type, **data):
         event = self.log.emit(event_type, **data)
@@ -271,13 +299,23 @@ class GTOWizardMatch:
             self.pacer(event)
         return event
 
+    def flush(self, h: _Hand):
+        for event_type, data in h.events:
+            self._emit(event_type, **data)
+        h.events = []
+        self.match_action_log.extend(h.actions)
+        del self.match_action_log[:-MATCH_LOG_MAX_ENTRIES]
+
     def _names(self, resp):
-        """(our name, position) per player in a response."""
+        """Each player in a response, by our name for them."""
         return {(NAME if p["name"] == API_NAME else self.seat.name): p for p in resp["game_state"]["players"]}
 
-    def play_hand(self, hand_num: int, resp: dict) -> dict:
-        """Play one hand, starting from the POST /hands response. Returns
-        {"deltas", "aivat"} from our seat's side."""
+    def play_hand(self, hand_num: int, resp: dict = None, live: bool = True) -> dict:
+        """Play one hand, from a POST /hands response (or start one). live:
+        emit events now; otherwise buffer them for flush(). Returns
+        {"deltas", "aivat", "hand"} from our seat's side."""
+        h = _Hand(hand_num, self._emit if live else None)
+        resp = resp or self.client.new_hand()
         me = self.seat.name
         hand_id = f"{self.match_id}_h{hand_num:04d}"
         api_id = resp["hand_id"]
@@ -286,16 +324,16 @@ class GTOWizardMatch:
         t = HandTracker(self.seats, sb=sb, bb=self.gtow.name if sb == me else me,
                         stack=STARTING_STACK, blinds=self.blinds)
         hole = _cards(players[me]["hole_cards"])
-        self._emit("hand_start", hand=hand_num, hand_seed=None, level=1, blinds=dict(self.blinds),
-                   button=self.seats[t.sb], sb=self.seats[t.sb], bb=self.seats[t.bb],
-                   order=list(self.seats), seats=dict(self.seats),
-                   stacks={n: STARTING_STACK for n in self.seats}, hole={me: hole},
-                   gtow_hand_id=api_id)
+        h.emit("hand_start", hand=hand_num, hand_seed=None, level=1, blinds=dict(self.blinds),
+               button=self.seats[t.sb], sb=self.seats[t.sb], bb=self.seats[t.bb],
+               order=list(self.seats), seats=dict(self.seats),
+               stacks={n: STARTING_STACK for n in self.seats}, hole={me: hole},
+               gtow_hand_id=api_id)
         for p in t.posts:
-            self._emit("post", hand=hand_num, bot=p["bot"], seat=self.seats[p["bot"]],
-                       kind=p["kind"], amount=p["amount"])
+            h.emit("post", hand=hand_num, bot=p["bot"], seat=self.seats[p["bot"]],
+                   kind=p["kind"], amount=p["amount"])
         # bots see posts in match_action_log just as in action_log
-        self.match_action_log.extend({"hand_num": hand_num, **a} for a in t.action_log)
+        h.actions.extend({"hand_num": hand_num, **a} for a in t.action_log)
         done = 0                    # history tokens already applied
         pending = None              # our decision, waiting for the API to apply it
         while True:
@@ -303,18 +341,16 @@ class GTOWizardMatch:
             board = _cards(gs["board_cards"])
             for token in gs["action_history"][done:]:
                 if token != "_":
-                    actor = t.to_act
-                    if actor == me:
+                    if t.to_act == me:
                         state, reply = pending
                     else:
-                        state = t.state_for(NAME, [], board, hand_id, hand_num)
-                        reply = None
+                        state, reply = t.state_for(NAME, [], board, hand_id, hand_num), None
                 applied = t.apply(token)
                 if applied is None:
-                    self._emit("deal", hand=hand_num, street=t.street_name,
-                               board=board[:BOARD_LEN[t.street_name]])
+                    h.emit("deal", hand=hand_num, street=t.street_name,
+                           board=board[:BOARD_LEN[t.street_name]])
                     continue
-                self._decision(hand_num, state, reply, applied)
+                self._decision(h, state, reply, applied)
             done = len(gs["action_history"])
             if gs["is_hand_over"]:
                 break
@@ -323,34 +359,36 @@ class GTOWizardMatch:
                                      f"{gs['player_to_act']!r}")
             state = t.state_for(me, hole, board, hand_id, hand_num,
                                 legal=gs["legal_actions"], raise_range=gs["raise_range"])
-            state["match_action_log"] = self.match_action_log[-MATCH_LOG_MAX_ENTRIES:]
-            reply = self.seat.request_action(state)
+            state["match_action_log"] = (self.match_action_log + h.actions)[-MATCH_LOG_MAX_ENTRIES:]
+            with self._seat_lock:
+                reply = self.seat.request_action(state)
             code, amount = to_api_action(reply, state, gs["legal_actions"], gs["raise_range"])
             pending = ({k: v for k, v in state.items() if k != "match_action_log"}, reply)
             resp = self.client.act(api_id, code, amount)
-        return self._finish(hand_num, t, resp)
+        return {**self._finish(h, t, resp), "hand": h}
 
-    def _decision(self, hand_num, state, reply, applied):
+    def _decision(self, h: _Hand, state, reply, applied):
         name = applied["bot"]
         if reply is None:                       # GTO Wizard: it did what it did
-            self.gtow.decisions += 1
+            with self._count_lock:
+                self.gtow.decisions += 1
             raw, extra = {"action": applied["action"], "amount": applied["amount"]}, {}
         else:
             raw = {"action": reply.get("action")}
             if "amount" in reply:
                 raw["amount"] = reply["amount"]
             extra = reply
-        self._emit("decision", hand=hand_num, bot=name, seat=self.seats[name], street=state["street"],
-                   state=state, reply=raw,
-                   applied={k: applied[k] for k in ("action", "amount", "pot_after", "stack_after")},
-                   think_ms=extra.get("think_ms"), logs=extra.get("logs", ""),
-                   logs_truncated=extra.get("logs_truncated", False), debug=extra.get("debug"),
-                   debug_error=extra.get("debug_error"), error=extra.get("error"),
-                   error_detail=extra.get("error_detail"))
-        self.match_action_log.append({"hand_num": hand_num, "seat": self.seats[name], "bot_id": name,
-                                      "action": applied["action"], "amount": applied["amount"]})
+        h.emit("decision", hand=h.num, bot=name, seat=self.seats[name], street=state["street"],
+               state=state, reply=raw,
+               applied={k: applied[k] for k in ("action", "amount", "pot_after", "stack_after")},
+               think_ms=extra.get("think_ms"), logs=extra.get("logs", ""),
+               logs_truncated=extra.get("logs_truncated", False), debug=extra.get("debug"),
+               debug_error=extra.get("debug_error"), error=extra.get("error"),
+               error_detail=extra.get("error_detail"))
+        h.actions.append({"hand_num": h.num, "seat": self.seats[name], "bot_id": name,
+                          "action": applied["action"], "amount": applied["amount"]})
 
-    def _finish(self, hand_num, t: HandTracker, resp) -> dict:
+    def _finish(self, h: _Hand, t: HandTracker, resp) -> dict:
         me = self.seat.name
         gs = resp["game_state"]
         board = _cards(gs["board_cards"])
@@ -364,25 +402,25 @@ class GTOWizardMatch:
             # all-in before the river: the rest of the board is dealt without action
             while t.street < 3 and len(board) > BOARD_LEN[t.street_name]:
                 t.street += 1
-                self._emit("deal", hand=hand_num, street=t.street_name,
-                           board=board[:BOARD_LEN[t.street_name]])
+                h.emit("deal", hand=h.num, street=t.street_name,
+                       board=board[:BOARD_LEN[t.street_name]])
             ranks = {}
             for n in self.seats:
                 score = eval7.evaluate([eval7.Card(c) for c in hole[n] + board])
                 ranks[n] = str(eval7.handtype(score))
-            self._emit("showdown", hand=hand_num, board=board, reveal=hole, ranks=ranks)
+            h.emit("showdown", hand=h.num, board=board, reveal=hole, ranks=ranks)
         delta = {me: int(round(won)), NAME: -int(round(won))}
         if delta[me] == 0 and t.folded is None:   # split pot
             for n in self.seats:
-                self._emit("award", hand=hand_num, bot=n, amount=t.invested[n], pot="main")
+                h.emit("award", hand=h.num, bot=n, amount=t.invested[n], pot="main")
         else:
             winner = me if delta[me] > 0 else NAME
-            self._emit("award", hand=hand_num, bot=winner,
-                       amount=t.invested[winner] + abs(delta[me]), pot="main")
-        self._emit("hand_end", hand=hand_num, board=board, pot=t.pot,
-                   stacks={n: STARTING_STACK + delta[n] for n in self.seats}, deltas=delta,
-                   aivat={me: gs["aivat_score"]}, gtow_hole=hole[NAME],
-                   gtow_hand_id=resp["hand_id"])
+            h.emit("award", hand=h.num, bot=winner,
+                   amount=t.invested[winner] + abs(delta[me]), pot="main")
+        h.emit("hand_end", hand=h.num, board=board, pot=t.pot,
+               stacks={n: STARTING_STACK + delta[n] for n in self.seats}, deltas=delta,
+               aivat={me: gs["aivat_score"]}, gtow_hole=hole[NAME],
+               gtow_hand_id=resp["hand_id"])
         return {"deltas": delta, "aivat": gs["aivat_score"]}
 
 
@@ -395,15 +433,38 @@ def check_game(resp: dict):
                              f"{STARTING_STACK} stacks at {SB}/{BB}, reset every hand")
 
 
+def is_gtow(spec) -> bool:
+    return isinstance(spec, str) and spec.strip().lower() == NAME
+
+
+def split_specs(specs: list):
+    """For a match spec list naming gto_wizard: (the other player, its index).
+    Raises ValueError unless it is exactly one player against GTO Wizard."""
+    others = [(s, i) for i, s in enumerate(specs) if not is_gtow(s)]
+    if len(specs) != 2 or len(others) != 1:
+        raise ValueError("GTO Wizard plays heads-up only: give exactly one other player "
+                         "(e.g. `poker match my_bot gto_wizard`)")
+    return others[0]
+
+
+def default_workers(seat: Seat, pace_ms: int = 0) -> int:
+    """Hands in play at once: one when someone watches or plays it live
+    (humans, LLMs), otherwise DEFAULT_WORKERS."""
+    return 1 if pace_ms or seat.kind in ("human", "mcp") else DEFAULT_WORKERS
+
+
 def config_for(hands: int, time_limit_ms: int = None) -> MatchConfig:
     return MatchConfig(mode="cash", hands=hands, starting_stack=STARTING_STACK,
                        structure=structures.flat(SB, BB), seed=None, time_limit_ms=time_limit_ms)
 
 
 def play_gtow_match(seat: Seat, config: MatchConfig, match_id: str, log: EventLog,
-                    client: Client, pacer=None) -> dict:
-    """Play a match against GTO Wizard with an already-built seat. Returns
-    {"results", "hands", "stopped", "aivat"}, like table.play_match."""
+                    client: Client, pacer=None, workers: int = 1) -> dict:
+    """Play a match against GTO Wizard with an already-built seat, `workers`
+    hands at a time. Returns {"results", "hands", "stopped", "aivat"}, like
+    table.play_match."""
+    if not 1 <= workers <= MAX_WORKERS:
+        raise ValueError(f"workers must be 1-{MAX_WORKERS} (GTO Wizard's limit on hands at once)")
     match = GTOWizardMatch(seat, client, log, match_id, pacer)
     names = list(match.seats)
     bankroll = {n: STARTING_STACK for n in names}
@@ -412,26 +473,34 @@ def play_gtow_match(seat: Seat, config: MatchConfig, match_id: str, log: EventLo
     hand_num, stopped = 0, None
     t0 = time.time()
     seats = [seat, match.gtow]
+    pool = ThreadPoolExecutor(workers) if workers > 1 else None
     try:
         warm = warm_up([seat])
-        resp = client.new_hand()
-        check_game(resp)
+        first = client.new_hand()
+        check_game(first)
         log.emit("match_start", match_id=match_id, seed=None, config=config.to_dict(),
                  seats=[{**seat.info(), "seat": 0, "warmup": warm[seat.name]},
-                        {**match.gtow.info(), "seat": 1, "game": resp["game"]}],
-                 dealer="gto_wizard", engine_hash=None, arena_version=arena.__version__)
+                        {**match.gtow.info(), "seat": 1, "game": first["game"]}],
+                 dealer="gto_wizard", engine_hash=None, arena_version=arena.__version__,
+                 workers=workers)
         match._emit("level", hand=0, level=1, sb=SB, bb=BB, ante=0)
-        while True:
-            info = match.play_hand(hand_num, resp)
+        futures, next_start = {}, 0
+        while hand_num < config.hands:
+            if pool is None:
+                info = match.play_hand(hand_num, first if hand_num == 0 else None)
+            else:
+                while next_start < config.hands and len(futures) < workers:
+                    futures[next_start] = pool.submit(match.play_hand, next_start,
+                                                      first if next_start == 0 else None, False)
+                    next_start += 1
+                info = futures.pop(hand_num).result()
+            match.flush(info["hand"])
             for n in names:
                 bankroll[n] += info["deltas"][n]
                 bb_sum[n] += info["deltas"][n] / BB
             aivat.append(info["aivat"])
             hand_num += 1
-            if hand_num >= config.hands:
-                stopped = "hand_limit"
-                break
-            resp = client.new_hand()
+        stopped = "hand_limit"
     except Cancelled:
         stopped = "cancelled"
         raise
@@ -439,6 +508,8 @@ def play_gtow_match(seat: Seat, config: MatchConfig, match_id: str, log: EventLo
         stopped = "error: " + repr(e)
         raise
     finally:
+        if pool is not None:
+            pool.shutdown(wait=True, cancel_futures=True)
         seat.stop()
         places = rank(names, key=lambda n: bankroll[n])
         results = [bot_result(s, places[s.name], bankroll[s.name], STARTING_STACK, hand_num,
@@ -466,9 +537,10 @@ def aivat_stats(scores: list) -> dict:
 
 def run_gtow_match(bot_spec, hands: int, match_id: str = None, runs_dir: Path = DEFAULT_RUNS_DIR,
                    use_docker: bool = None, listeners=(), pace_ms: int = 0, cancel=None,
-                   client: Client = None, time_limit_ms: int = None) -> dict:
+                   client: Client = None, time_limit_ms: int = None, workers: int = None) -> dict:
     """Play `hands` hands of `bot_spec` (a BotSpec or a ready-made Seat) against
-    GTO Wizard and write the event log + summary. Returns the summary."""
+    GTO Wizard and write the event log + summary. workers: hands at a time
+    (default: see default_workers). Returns the summary."""
     config = config_for(hands, time_limit_ms)
     client = client or Client()
     match_id = match_id or f"gtow_{time.strftime('%Y%m%d_%H%M%S')}_{os.urandom(2).hex()}"
@@ -476,13 +548,15 @@ def run_gtow_match(bot_spec, hands: int, match_id: str = None, runs_dir: Path = 
     # bots are seeded per match; there is no match seed, so use a fresh one
     seat = make_bot_seats([bot_spec], config, use_docker,
                           seed=int.from_bytes(os.urandom(4), "big"))[0]
+    workers = workers or default_workers(seat, pace_ms)
     t0 = time.time()
     with EventLog(run_dir) as log:
         log.listeners.extend(listeners)
         outcome, interrupted = None, "error"
         try:
             outcome = play_gtow_match(seat, config, match_id, log, client,
-                                      pacer=Pacer(pace_ms, cancel) if (pace_ms or cancel) else None)
+                                      pacer=Pacer(pace_ms, cancel) if (pace_ms or cancel) else None,
+                                      workers=workers)
         except Cancelled:
             interrupted = "cancelled"
             raise
@@ -496,7 +570,7 @@ def run_gtow_match(bot_spec, hands: int, match_id: str = None, runs_dir: Path = 
                 "aivat": final.get("aivat"),
                 "stopped": outcome["stopped"] if outcome else interrupted,
                 "duration_s": round(time.time() - t0, 2), "run_dir": str(run_dir),
-                "bot_diagnostics": diagnostics([seat]),
+                "bot_diagnostics": diagnostics([seat]), "workers": workers,
             }
             log.write_summary(summary)
     return summary

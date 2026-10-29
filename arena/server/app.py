@@ -51,6 +51,7 @@ class MatchRequest(BaseModel):
     docker: bool = False
     pace_ms: Optional[int] = None          # default: DEFAULT_PACE_MS (watchable)
     time_limits: Optional[dict] = None     # per seat kind, e.g. {"human": 30000, "mcp": 120000}
+    workers: Optional[int] = None          # against gto_wizard: hands played at once
     id: Optional[str] = None
 
 
