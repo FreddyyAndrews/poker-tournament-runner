@@ -83,7 +83,8 @@ export type MatchStart = Base & {
   seats: SeatInfo[]
   format?: string
   table_size?: number
-  dealer?: string           // 'gto_wizard': GTO Wizard dealt every hand (no seed)
+  dealer?: string           // an external bot (gto_wizard, slumbot) dealt every hand (no seed)
+  score_kind?: string       // ... and what its luck-adjusted score is ('AIVAT', 'baseline')
   table?: number
 }
 export type LevelEvent = Base & { type: 'level'; hand: number; level: number; sb: number; bb: number; ante: number }
@@ -123,8 +124,10 @@ export type Deal = Base & { type: 'deal'; hand: number; street: string; board: s
 export type Showdown = Base & { type: 'showdown'; hand: number; board: string[]; reveal: Record<string, string[]>; ranks: Record<string, string> }
 export type Award = Base & { type: 'award'; hand: number; bot: string; amount: number; pot: string }
 export type HandEnd = Base & { type: 'hand_end'; hand: number; board: string[]; pot: number; stacks: Record<string, number>; deltas: Record<string, number>
-  aivat?: Record<string, number>     // against GTO Wizard: luck-adjusted chips won this hand
-  gtow_hole?: string[] }             // ... and GTO Wizard's hole cards, known once the hand is over
+  score?: Record<string, number | null>   // against an external bot: luck-adjusted chips won this hand
+  opp_hole?: Record<string, string[]>     // ... and its hole cards, known once the hand is over
+  aivat?: Record<string, number>          // (older GTO Wizard logs: the same as score)
+  gtow_hole?: string[] }                  // (older GTO Wizard logs: the same as opp_hole)
 export type Elimination = Base & { type: 'elimination'; hand: number; bot: string; place: number }
 export type SeatChange = Base & { type: 'seat_change'; hand: number | null; bot: string; seat: number; stack: number; reason: string }
 export type TableClosed = Base & { type: 'table_closed'; hand: number }

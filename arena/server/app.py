@@ -160,17 +160,23 @@ def create_app(runs_dir: Path = DEFAULT_RUNS_DIR, port: int = 8765) -> FastAPI:
                         "hash": botlib.bot_hash(bot_path)})
         return out
 
-    @app.get("/api/gto_wizard")
-    def gto_wizard():
-        """Whether GTO Wizard can be played here (an API key is set), and its game."""
-        from arena import gtow
-        try:
-            gtow.api_key()
-            configured = True
-        except gtow.GTOWizardError:
-            configured = False
-        return {"configured": configured, "name": gtow.NAME, "starting_stack": gtow.STARTING_STACK,
-                "sb": gtow.SB, "bb": gtow.BB, "max_workers": gtow.MAX_WORKERS}
+    @app.get("/api/external")
+    def external_bots():
+        """The bots played through their own APIs (GTO Wizard, Slumbot): whether
+        each can be played here (e.g. an API key is set), and their game."""
+        from arena import external
+        out = []
+        for o in external.opponents().values():
+            try:
+                o.check_configured()
+                configured, why = True, None
+            except external.ExternalError as e:
+                configured, why = False, str(e)
+            out.append({"name": o.name, "title": o.title, "configured": configured, "why": why,
+                        "score_kind": o.score_kind, "default_workers": o.default_workers,
+                        "max_workers": o.max_workers, "starting_stack": external.STARTING_STACK,
+                        "sb": external.SB, "bb": external.BB})
+        return out
 
     @app.get("/api/structures")
     def list_structures(stack: int = 10_000):

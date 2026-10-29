@@ -36,9 +36,16 @@ const PRESETS = ['turbo', 'standard', 'slow']
 
 const fmt = (n: number) => n.toLocaleString('en-US')
 
-// Against GTO Wizard (through its API) the game is fixed; see /api/gto_wizard.
-const GTOW = 'gto_wizard'
-type GtowInfo = { configured: boolean; starting_stack: number; sb: number; bb: number }
+// Bots played through their own APIs (GTO Wizard, Slumbot): their game is fixed; see /api/external.
+type ExternalBot = {
+  name: string; title: string; configured: boolean; why: string | null; score_kind: string
+  default_workers: number; max_workers: number; starting_stack: number; sb: number; bb: number
+}
+const EXTERNAL_BLURB: Record<string, string> = {
+  gto_wizard: 'GTO Wizard AI, through its benchmark API; needs an API key',
+  slumbot: 'Slumbot, through its free public API at slumbot.com',
+}
+const EXTERNAL_TITLE: Record<string, string> = { gto_wizard: 'GTO Wizard', slumbot: 'Slumbot' }
 
 export function Launch() {
   const [bots, setBots] = useState<BotInfo[]>([])
@@ -67,12 +74,12 @@ export function Launch() {
   const [name, setName] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [gtowInfo, setGtowInfo] = useState<GtowInfo | null>(null)
+  const [externals, setExternals] = useState<ExternalBot[]>([])
 
   useEffect(() => {
     fetch('/api/bots').then(r => r.json()).then(setBots).catch(e => setError(String(e)))
     fetch('/api/structures').then(r => r.json()).then(d => setDefaults(d.formats))
-    fetch('/api/gto_wizard').then(r => r.json()).then(setGtowInfo).catch(() => setGtowInfo(null))
+    fetch('/api/external').then(r => r.json()).then(setExternals).catch(() => setExternals([]))
   }, [])
   useEffect(() => {
     fetch(`/api/structures?stack=${stack || 10000}`).then(r => r.json()).then(d => setPresets(d.presets))
@@ -97,14 +104,17 @@ export function Launch() {
   const series = runs > 1
   const remote = entrants.filter(e => e.startsWith('human:') || e.startsWith('mcp:'))
   const remoteOk = format === 'table' && !series
-  const vsGtow = entrants.includes(GTOW)
-  const g = gtowInfo ?? { configured: false, starting_stack: 20_000, sb: 50, bb: 100 }
+  const isExternal = (e: string) => e in EXTERNAL_TITLE
+  const ext = externals.find(x => entrants.includes(x.name)) ?? null
+  const vsExt = entrants.some(isExternal)
+  const g = ext ?? { name: '', title: 'it', score_kind: 'luck-adjusted', default_workers: 1, starting_stack: 20_000, sb: 50, bb: 100 }
   const blinds = blindKind === 'preset' ? preset : `${flat.sb}/${flat.bb}${flat.ante ? '/' + flat.ante : ''}`
   const problem = useMemo(() => {
     const n = entrants.length
-    if (vsGtow) {
-      if (!remoteOk) return 'GTO Wizard plays a single heads-up match, played once.'
-      if (n !== 2) return 'GTO Wizard plays heads-up: add exactly one other player.'
+    if (vsExt) {
+      if (entrants.filter(isExternal).length > 1) return 'Play GTO Wizard or Slumbot, one at a time, against one of your players.'
+      if (!remoteOk) return `${g.title} plays a single heads-up match, played once.`
+      if (n !== 2) return `${g.title} plays heads-up: add exactly one other player.`
       if (hands < 1) return 'Hands must be at least 1.'
       return null
     }
@@ -117,15 +127,15 @@ export function Launch() {
     if (stack < 1) return 'Starting stack must be positive.'
     if (hands < 1) return 'Hands must be at least 1.'
     return null
-  }, [entrants, format, duplicate, mode, blindKind, flat, stack, hands, remote.length, remoteOk, vsGtow])
+  }, [entrants, format, duplicate, mode, blindKind, flat, stack, hands, remote.length, remoteOk, vsExt, g])
 
   const summary = useMemo(() => {
     const n = entrants.length
-    if (vsGtow) {
-      const who = entrants.find(e => e !== GTOW)
+    if (vsExt) {
+      const who = entrants.find(e => !isExternal(e))
       const watch = pace === 600 ? 'watched live' : pace ? `watched live at a ${PACES.find(p => p.ms === pace)?.title.toLowerCase()} pace`
-        : 'at full speed, 5 hands at a time'
-      return `${who ? label(who) : 'One player'} against GTO Wizard: ${fmt(hands)} hands of ${g.starting_stack / g.bb}bb `
+        : `at full speed, ${g.default_workers} hands at a time`
+      return `${who ? label(who) : 'One player'} against ${g.title}: ${fmt(hands)} hands of ${g.starting_stack / g.bb}bb `
         + `at ${fmt(g.sb)}/${fmt(g.bb)}, every hand from ${fmt(g.starting_stack)} chips, ${watch}.`
     }
     const what = format === 'table' ? (n === 2 ? 'Heads-up match' : `${n || 'N'}-player table`)
@@ -138,14 +148,14 @@ export function Launch() {
     const watch = series ? `played ${runs} times at full speed`
       : pace === 600 ? 'watched live' : pace ? `watched live at a ${PACES.find(p => p.ms === pace)?.title.toLowerCase()} pace` : 'at full speed'
     return `${what}: ${how}${dup}, ${fmt(stack)} chips each, ${watch}.`
-  }, [entrants, format, mode, blindKind, preset, blinds, hands, duplicate, series, runs, pace, stack, tableSize, vsGtow, g])
+  }, [entrants, format, mode, blindKind, preset, blinds, hands, duplicate, series, runs, pace, stack, tableSize, vsExt, g])
 
   // Rough wall-clock estimate for paced play (about 7 paced steps per hand).
   const estimate = useMemo(() => {
     const n = entrants.length
-    if (vsGtow) {
-      // paced: ~7 paced steps per hand; full speed: ~0.25 s per hand with 5 at once
-      const minutes = pace ? (hands * 7 * pace) / 60000 : hands * 0.25 / 60
+    if (vsExt) {
+      // paced: ~7 paced steps per hand; full speed: ~1 s per hand per session, several at once
+      const minutes = pace ? (hands * 7 * pace) / 60000 : hands / g.default_workers / 60
       return minutes < 2 ? 'about a minute' : minutes < 90 ? `roughly ${Math.round(minutes)} minutes` : `roughly ${(minutes / 60).toFixed(1)} hours`
     }
     if (series || !pace || n < 2) return null
@@ -157,7 +167,7 @@ export function Launch() {
     const totalHands = format === 'mtt' ? freeze(n) : perMatch * matches
     const minutes = (totalHands * 7 * pace) / 60000
     return minutes < 2 ? 'about a minute' : minutes < 90 ? `roughly ${Math.round(minutes)} minutes` : `roughly ${(minutes / 60).toFixed(1)} hours`
-  }, [entrants, series, pace, format, duplicate, mode, hands, tableSize, vsGtow])
+  }, [entrants, series, pace, format, duplicate, mode, hands, tableSize, vsExt, g])
 
   async function launch() {
     if (problem) return
@@ -169,8 +179,8 @@ export function Launch() {
       docker, pace_ms: series ? 0 : pace,
     }
     try {
-      if (vsGtow) {
-        // GTO Wizard sets the game: no mode, stack, blinds or seed to send
+      if (vsExt) {
+        // GTO Wizard and Slumbot set the game: no mode, stack, blinds or seed to send
         const r = await post('/api/matches', { bots: entrants, hands, pace_ms: pace, docker,
           time_limit_ms: common.time_limit_ms, time_limits: { human: humanSecs * 1000, mcp: llmSecs * 1000 } })
         const me = (r.seats ?? []).find((x: any) => x.kind === 'human')
@@ -249,15 +259,16 @@ export function Launch() {
                         onClick={() => add(`mcp:${entrants.some(e => e.startsWith('mcp:')) ? 'llm' + (remote.length + 1) : 'claude'}`)}
                         data-testid="add-mcp">Add</button>
               </div>
-              {gtowInfo?.configured && (
-                <div className="bot-row" data-testid="gtow-row">
-                  <span>GTO Wizard <span className="muted">(GTO Wizard AI, through its API; heads-up)</span></span>
+              {externals.map(x => (
+                <div key={x.name} className="bot-row" data-testid={`external-${x.name}`}>
+                  <span>{x.title} <span className="muted">({EXTERNAL_BLURB[x.name] ?? 'through its API'}; heads-up)</span></span>
                   <span className="muted mono">api</span><span />
-                  <button className="small" disabled={!remoteOk || vsGtow}
-                          title={remoteOk ? 'Plays one heads-up match against one other player' : 'Only for a single table, played once'}
-                          onClick={() => add(GTOW)} data-testid="add-gto_wizard">Add</button>
+                  <button className="small" disabled={!x.configured || !remoteOk || vsExt}
+                          title={!x.configured ? (x.why ?? 'Not set up on this server')
+                            : remoteOk ? 'Plays one heads-up match against one other player' : 'Only for a single table, played once'}
+                          onClick={() => add(x.name)} data-testid={`add-${x.name}`}>Add</button>
                 </div>
-              )}
+              ))}
               {bots.map(b => (
                 <div key={b.path} className="bot-row">
                   <span>{b.name}</span>
@@ -271,19 +282,22 @@ export function Launch() {
                     onClick={() => setEntrants(es => [...es, ...bots.map(b => b.name)])}>Add every bot</button>
           </section>
 
-          {vsGtow ? (
-          <section className="section" data-testid="gtow-game">
-            <h2>GTO Wizard's game</h2>
+          {vsExt ? (
+          <section className="section" data-testid="external-game">
+            <h2>{g.title}'s game</h2>
             <p className="hint" style={{ marginTop: 0 }}>
               Heads-up, {g.starting_stack / g.bb}bb deep: {fmt(g.starting_stack)} chips at {fmt(g.sb)}/{fmt(g.bb)},
-              and every hand starts from that stack (cash). GTO Wizard deals on its own server, so there is no seed
-              and no duplicate; judge the result by AIVAT (luck-adjusted bb/100), shown in the standings.
+              and every hand starts from that stack (cash). {g.title} deals on its own server, so there is no seed
+              and no duplicate; judge the result by the luck-adjusted bb/100 ({g.score_kind === 'AIVAT' ? 'AIVAT'
+                : "Slumbot's baseline: your result minus what Slumbot won with your cards against itself"}), shown in the standings.
             </p>
             <div className="fields">
               <label>Hands
                 <input type="number" min={1} value={hands} onChange={e => setHands(Number(e.target.value))} data-testid="hands" /></label>
             </div>
-            <p className="hint">Every hand counts against the API key's monthly quota (about 100,000 hands).</p>
+            <p className="hint">{g.name === 'gto_wizard'
+              ? "Every hand counts against the API key's monthly quota (about 100,000 hands)."
+              : `Slumbot is a free service run by one person, so at most ${(ext as ExternalBot | null)?.max_workers ?? 3} hands play at once.`}</p>
           </section>
           ) : <>
           <section className="section">
@@ -374,7 +388,7 @@ export function Launch() {
             <summary className="muted" style={{ cursor: 'pointer' }}>Advanced</summary>
             <div className="fields" style={{ marginTop: 10 }}>
               {format !== 'table' && <label>Name<input value={name} onChange={e => setName(e.target.value)} placeholder="optional" /></label>}
-              {!vsGtow && <label>Seed<input value={seed} onChange={e => setSeed(e.target.value.replace(/\D/g, ''))} placeholder="random" data-testid="seed" /></label>}
+              {!vsExt && <label>Seed<input value={seed} onChange={e => setSeed(e.target.value.replace(/\D/g, ''))} placeholder="random" data-testid="seed" /></label>}
               <label>Bot time limit (ms)<input value={timeLimit} onChange={e => setTimeLimit(e.target.value.replace(/\D/g, ''))} placeholder="2000" /></label>
               <label>Your time (s)<input type="number" min={5} value={humanSecs} onChange={e => setHumanSecs(Number(e.target.value))} /></label>
               <label>LLM time (s)<input type="number" min={5} value={llmSecs} onChange={e => setLlmSecs(Number(e.target.value))} /></label>
@@ -400,7 +414,7 @@ export function Launch() {
 }
 
 function label(entrant: string) {
-  if (entrant === GTOW) return 'GTO Wizard'
+  if (entrant in EXTERNAL_TITLE) return EXTERNAL_TITLE[entrant]
   if (entrant.startsWith('human:')) return `${entrant.slice(6)} (you)`
   if (entrant.startsWith('mcp:')) return `${entrant.slice(4)} (LLM)`
   return entrant

@@ -92,21 +92,28 @@ poker export <run-id> --bot shark                 # zip of results for one parti
 - **`poker verify`** on a run or series checks every match log, then recomputes the standings (and series totals) from the logs and compares them with what was saved.
 - **`poker export --bot NAME`** keeps everything public plus that bot's own private data (its hole cards, what it saw, its logs and `debug`). Other bots' hole cards appear only when they were shown down, and their decision details are removed.
 
-### Playing GTO Wizard
+### Playing GTO Wizard and Slumbot
 
 ```bash
+poker match my_bots/mybot slumbot --hands 1000        # heads-up against Slumbot (free, no key)
 poker match my_bots/mybot gto_wizard --hands 500      # heads-up against GTO Wizard AI
-poker match human:Me gto_wizard --hands 20 --pace 600  # or play it yourself in the browser
+poker match human:Me gto_wizard --hands 20 --pace 600  # or play one yourself in the browser
 ```
 
-`gto_wizard` as the opponent plays [GTO Wizard AI](https://gtowizard.com/benchmark) through its benchmark API. Put your key in `.env` as `GTO_WIZARD_API_KEY=...`.
+Two strong outside bots can be played through their own APIs, as `slumbot` or `gto_wizard` in place of the opponent (also on the **New** page and over MCP):
+
+| | [Slumbot](https://slumbot.com) | [GTO Wizard AI](https://gtowizard.com/benchmark) |
+|---|---|---|
+| Access | Free public API, no key | API key in `.env` as `GTO_WIZARD_API_KEY=...` |
+| Limits | A free service run by one person: at most 3 hands at once (default 2) | About 100,000 hands a month per key; up to 20 at once (default 5) |
+| Luck-adjusted score | Baseline: your result minus what Slumbot won with your cards against itself | AIVAT |
 
 - **The game is fixed:** heads-up, 200bb stacks at 50/100, reset every hand (like `--cash`). `--freezeout`, `--blinds`, `--stack` and `--seed` are refused.
-- **GTO Wizard deals**, on its server: you see your cards, the board and the action, and its cards when the hand ends. The match is logged like any other (live view, replay, analysis), but there is no seed, so it can't be replayed or duplicated. `poker verify` checks only the chip accounting.
-- **Judge by AIVAT, not chips.** Every hand gets GTO Wizard's AIVAT score, a luck-adjusted result. The CLI prints AIVAT bb/100 with a 95% CI, and the log has it per hand (`hand_end.aivat`), as do GTO Wizard's hole cards (`hand_end.gtow_hole`).
-- **Speed:** about 1 s per hand one at a time. `--workers N` plays N hands at once (default 5, at most 20). It falls back to 1 with `--pace` or a human/LLM seat. With several at once, `match_action_log` holds the hands already finished.
-- **Quota:** the API allows about 100,000 hands a month per key, shared by everyone using it.
-- An LLM can play it too: `start_match(opponents=["gto_wizard"])` over MCP.
+- **They deal**, on their own server: you see your cards, the board and the action, and theirs when the hand ends. The match is logged like any other (live view, replay, analysis), but there is no seed, so it can't be replayed or duplicated. `poker verify` checks only the chip accounting.
+- **Judge by the luck-adjusted score, not chips.** Each hand's score is in the log (`hand_end.score`, with their cards in `hand_end.opp_hole`). The CLI prints luck-adjusted bb/100 with a 95% CI, and the standings show it as a column.
+- **Speed:** about 1 s per hand one at a time. `--workers N` plays N hands at once. It falls back to 1 with `--pace` or a human/LLM seat. With several at once, `match_action_log` holds the hands already finished.
+- **Slumbot account (optional):** set `SLUMBOT_USERNAME` and `SLUMBOT_PASSWORD` in `.env` to play under your slumbot.com account; otherwise sessions are anonymous.
+- An LLM can play them too: `start_match(opponents=["slumbot"])` over MCP.
 
 ### Is my bot improving?
 

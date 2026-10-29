@@ -35,38 +35,39 @@ def _say(args, msg):
 # poker match
 # ---------------------------------------------------------------------------
 
-def _check_gtow_args(args):
-    """A match against GTO Wizard: its game is fixed, so refuse the flags that
-    would change it. Returns the other player's spec and index."""
-    from arena import gtow
-    hero, idx = gtow.split_specs(args.bots)
+def _check_external_args(args):
+    """A match against an external bot (GTO Wizard, Slumbot): its game is
+    fixed, so refuse the flags that would change it. Returns the opponent,
+    the other player's spec and its index."""
+    from arena import external
+    opponent, hero, idx = external.split_specs(args.bots)
     fixed = [flag for flag, given in (("--freezeout", args.freezeout), ("--blinds", args.blinds),
                                       ("--seed", args.seed is not None),
                                       ("--stack", args.stack != 10_000)) if given]
     if fixed:
-        raise ValueError(f"GTO Wizard sets the game (heads-up, 200bb at 50/100, stacks reset "
-                         f"every hand), so {', '.join(fixed)} can't be used")
-    gtow.api_key()
-    return hero, idx
+        raise ValueError(f"{opponent.title} sets the game (heads-up, 200bb at 50/100, stacks "
+                         f"reset every hand), so {', '.join(fixed)} can't be used")
+    opponent.check_configured()
+    return opponent, hero, idx
 
 
 def cmd_match(args):
-    from arena import gtow
-    if any(gtow.is_gtow(b) for b in args.bots):
+    from arena import external
+    if any(external.find(b) for b in args.bots):
         try:
-            hero, idx = _check_gtow_args(args)
+            opponent, hero, idx = _check_external_args(args)
             if args.local:
                 names = args.name or []
                 spec = botlib.resolve_all([hero], names=[names[idx] if idx < len(names) else None])[0]
-        except (ValueError, gtow.GTOWizardError) as e:
+        except (ValueError, external.ExternalError) as e:
             _fail(str(e), args.json)
         live = _live_printer() if args.verbose and not args.json else None
         if args.local:
-            summary = gtow.run_gtow_match(spec, args.hands, match_id=args.id,
-                                          runs_dir=Path(args.out or DEFAULT_RUNS_DIR),
-                                          use_docker=True if args.docker else None,
-                                          listeners=[live] if live else [], pace_ms=args.pace,
-                                          time_limit_ms=args.time_limit_ms, workers=args.workers)
+            summary = external.run_external_match(
+                opponent, spec, args.hands, match_id=args.id,
+                runs_dir=Path(args.out or DEFAULT_RUNS_DIR), use_docker=True if args.docker else None,
+                listeners=[live] if live else [], pace_ms=args.pace,
+                time_limit_ms=args.time_limit_ms, workers=args.workers)
         else:
             summary = _match_on_server(args, live)
         if args.json:
@@ -77,7 +78,7 @@ def cmd_match(args):
             sys.exit(1)
         return
     if args.workers:
-        _fail("--workers only applies to matches against gto_wizard", args.json)
+        _fail("--workers only applies to matches against gto_wizard or slumbot", args.json)
     try:
         specs = botlib.resolve_all(args.bots, names=args.name, allow_remote=not args.local)
         if args.freezeout:
@@ -210,7 +211,8 @@ def _print_match(s):
         print(f"\nMatch {s['match_id']} stopped ({s['stopped']}) before it produced results.")
         print(f"Log so far: {s['run_dir']}")
         return
-    dealt = "dealt by GTO Wizard" if s.get("dealer") == "gto_wizard" else f"seed {s['seed']}"
+    dealer = next((x.get("title") for x in s.get("seats", []) if x["name"] == s.get("dealer")), None)
+    dealt = f"dealt by {dealer or s['dealer']}" if s.get("dealer") else f"seed {s['seed']}"
     print(f"\nMatch {s['match_id']}  ({cfg['mode']}, {s['hands']} hands, {dealt}, "
           f"{s['duration_s']}s)")
     print(f"Ended: {s['stopped']}\n")
@@ -228,10 +230,10 @@ def _print_match(s):
         print("\nBot errors:")
         for b, errs in problems.items():
             print(f"  {b}: {errs[:5]}" + (" ..." if len(errs) > 5 else ""))
-    for bot, a in (s.get("aivat") or {}).items():
+    for bot, a in (s.get("score") or {}).items():
         if a.get("bb_per_100") is not None:
             ci = f" +/- {a['ci95']}" if a.get("ci95") is not None else ""
-            print(f"\nAIVAT (luck-adjusted) for {bot}: {a['bb_per_100']:+.1f} bb/100{ci} "
+            print(f"\nLuck-adjusted ({a.get('kind')}) for {bot}: {a['bb_per_100']:+.1f} bb/100{ci} "
                   f"(95% CI, {a['hands']} hands). Chips won are noisier: judge by this.")
     print(f"\nLog: {s['run_dir']}")
     print(f"Check it with: poker verify {s['run_dir']}")
@@ -689,10 +691,11 @@ def build_parser():
     p = argparse.ArgumentParser(prog="poker", description="Poker bot matches and tournaments")
     sub = p.add_subparsers(dest="command", required=True)
 
-    m = sub.add_parser("match", help="play one table (2-9 bots), or one bot against gto_wizard",
+    m = sub.add_parser("match", help="play one table (2-9 bots), or one bot against gto_wizard/slumbot",
                        description="Play one table. Bots are names from my_bots/ or bots/, or paths. "
                                    "`poker match my_bot gto_wizard` plays GTO Wizard AI heads-up "
-                                   "through its API (needs GTO_WIZARD_API_KEY). "
+                                   "through its API (needs GTO_WIZARD_API_KEY); `slumbot` plays "
+                                   "Slumbot the same way (free, no key). "
                                    "Runs on the poker server (watch it live in the web UI) unless --local.")
     m.add_argument("bots", nargs="+", help="2-9 bots: names (shark) or paths (my_bots/x/bot.py)")
     m.add_argument("--name", action="append", help="display name for each bot, in order (repeatable)")
@@ -706,8 +709,9 @@ def build_parser():
                                     + ", ".join(structures.PRESETS))
     _add_common_match_flags(m)
     m.add_argument("--workers", type=int,
-                   help="against gto_wizard: hands played at once (default 5, or 1 with --pace "
-                        "or a human/MCP seat; at most 20)")
+                   help="against gto_wizard or slumbot: hands played at once (default 5 for "
+                        "gto_wizard, at most 20; 2 for slumbot, at most 3; 1 with --pace or a "
+                        "human/MCP seat)")
     m.add_argument("-v", "--verbose", action="store_true", help="print progress while playing")
     m.set_defaults(func=cmd_match)
 

@@ -16,7 +16,7 @@ from pathlib import Path
 
 from arena import bots as botlib
 from arena import formats
-from arena import gtow
+from arena import external
 from arena.pacing import Cancelled
 from arena.remote import RemoteSeat, SeatHub
 from arena.series import run_series
@@ -96,8 +96,8 @@ class JobManager:
         Bots may include "human:Name" / "mcp:Name" seats. Validates before
         starting (raises ValueError). Returns the job; job.seats lists the
         remote seats (name, kind, token)."""
-        if any(gtow.is_gtow(b) for b in p["bots"]):
-            return self._start_gtow_match(p)
+        if any(external.find(b) for b in p["bots"]):
+            return self._start_external_match(p)
         specs = botlib.resolve_all(p["bots"], names=p.get("names"), allow_remote=True)
         if not 2 <= len(specs) <= 9:
             raise ValueError(f"A table needs 2-9 players, got {len(specs)}")
@@ -134,32 +134,33 @@ class JobManager:
                           "time_limit_ms": seat.time_limit_ms})
         return seat
 
-    def _start_gtow_match(self, p: dict) -> Job:
-        """One player against GTO Wizard (see arena/gtow.py). GTO Wizard sets
-        the game, so mode and stack are ignored, and freezeout, other blinds
-        and seeds are refused rather than silently changed."""
-        hero, idx = gtow.split_specs(p["bots"])
+    def _start_external_match(self, p: dict) -> Job:
+        """One player against an external bot, GTO Wizard or Slumbot (see
+        arena/external.py). They set the game, so mode and stack are ignored,
+        and freezeout, other blinds and seeds are refused rather than silently
+        changed."""
+        opponent, hero, idx = external.split_specs(p["bots"])
         if p.get("mode") == "freezeout" or p.get("seed") is not None or \
                 (p.get("blinds") or "50/100") not in ("50/100", "50/100/0"):
-            raise ValueError("GTO Wizard sets the game (heads-up, 200bb at 50/100, stacks reset "
-                             "every hand): freezeout, blinds and seeds don't apply")
+            raise ValueError(f"{opponent.title} sets the game (heads-up, 200bb at 50/100, stacks "
+                             "reset every hand): freezeout, blinds and seeds don't apply")
         try:
-            gtow.api_key()
-        except gtow.GTOWizardError as e:
+            opponent.check_configured()
+        except external.ExternalError as e:
             raise ValueError(str(e)) from None
         names = p.get("names") or []
         name = names[idx] if idx < len(names) else None
         spec = botlib.resolve_all([hero], names=[name], allow_remote=True)[0]
-        match_id = p.get("id") or _stamp("gtow", None)
+        match_id = p.get("id") or _stamp({"gto_wizard": "gtow"}.get(opponent.name, opponent.name), None)
         self._check_new(match_id)
         job = Job(id=match_id, kind="match", params=p, live=[match_id])
         spec = self._remote_seat(job, spec, p)
 
         def work():
-            gtow.run_gtow_match(spec, p.get("hands") or 100, match_id=match_id,
-                                runs_dir=self.runs_dir, use_docker=True if p.get("docker") else None,
-                                pace_ms=p.get("pace_ms") or 0, cancel=job.cancel,
-                                time_limit_ms=p.get("time_limit_ms"), workers=p.get("workers"))
+            external.run_external_match(
+                opponent, spec, p.get("hands") or 100, match_id=match_id, runs_dir=self.runs_dir,
+                use_docker=True if p.get("docker") else None, pace_ms=p.get("pace_ms") or 0,
+                cancel=job.cancel, time_limit_ms=p.get("time_limit_ms"), workers=p.get("workers"))
             job.matches_done = 1
 
         return self._launch(job, work)

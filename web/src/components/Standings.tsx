@@ -8,9 +8,10 @@ export function Standings({ state, colorOf }: { state: TableState; colorOf: (n: 
   // Cash games reset stacks every hand, so the score is the running net, not the stack.
   const cash = state.start?.config.mode === 'cash'
   const score = (p: (typeof state.players)[string]) => cash ? p.net : p.stack
-  // Against GTO Wizard: AIVAT (luck-adjusted) bb/100, which says far more than net chips
+  // Against an external bot: luck-adjusted bb/100, which says far more than net chips
   const bb = state.blinds?.bb ?? state.start?.config.structure.levels[0]?.bb ?? 100
-  const aivat = Object.values(state.players).some(p => p.aivat !== null)
+  const scored = Object.values(state.players).some(p => p.score !== null)
+  const kind = state.start?.score_kind ?? 'AIVAT'
   const handsDone = (state.hand ?? -1) + (state.handOver ? 1 : 0)
   const perHundred = (v: number | null) => v === null || !handsDone ? '' :
     ((v / bb) * 100 / handsDone > 0 ? '+' : '') + ((v / bb) * 100 / handsDone).toFixed(1)
@@ -19,7 +20,9 @@ export function Standings({ state, colorOf }: { state: TableState; colorOf: (n: 
   return (
     <table className="standings num" data-testid="standings">
       {cash && <thead><tr><th /><th className="r">Stack</th><th className="r">Net</th>
-        {aivat && <th className="r" title="Luck-adjusted bb/100 (GTO Wizard's AIVAT score)">AIVAT bb/100</th>}</tr></thead>}
+        {scored && <th className="r" title={kind === 'AIVAT' ? "Luck-adjusted bb/100 (GTO Wizard's AIVAT score)"
+          : "Luck-adjusted bb/100 (your result minus what Slumbot won with your cards against itself)"}>
+          {kind === 'AIVAT' ? 'AIVAT' : 'Adj.'} bb/100</th>}</tr></thead>}
       <tbody>
         {rows.map(p => {
           const delta = cash ? p.net : p.stack - start
@@ -28,7 +31,7 @@ export function Standings({ state, colorOf }: { state: TableState; colorOf: (n: 
               <td><span className="who"><span className="swatch" style={{ background: colorOf(p.name) }} />{p.name}</span></td>
               <td className="r">{p.busted && p.place ? `out, ${ord(p.place)}` : fmt(p.stack)}</td>
               <td className="r" style={{ color: 'var(--text-2)' }}>{cash && delta === 0 ? '\u00b10' : (delta > 0 ? '+' : '') + fmt(delta)}</td>
-              {aivat && <td className="r" data-testid={`aivat-${p.name}`}>{perHundred(p.aivat)}</td>}
+              {scored && <td className="r" data-testid={`score-${p.name}`}>{perHundred(p.score)}</td>}
             </tr>
           )
         })}

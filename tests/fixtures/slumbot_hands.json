@@ -1,0 +1,461 @@
+[
+ [
+  {
+   "resp": {
+    "old_action": "",
+    "action": "b200",
+    "client_pos": 0,
+    "hole_cards": [
+     "Jd",
+     "8h"
+    ],
+    "board": [],
+    "token": "TOKEN"
+   }
+  },
+  {
+   "sent": "c",
+   "resp": {
+    "old_action": "b200",
+    "action": "b200c/",
+    "client_pos": 0,
+    "hole_cards": [
+     "Jd",
+     "8h"
+    ],
+    "board": [
+     "Qs",
+     "4h",
+     "3c"
+    ],
+    "token": "TOKEN"
+   }
+  },
+  {
+   "sent": "k",
+   "resp": {
+    "old_action": "b200c/",
+    "action": "b200c/kk/",
+    "client_pos": 0,
+    "hole_cards": [
+     "Jd",
+     "8h"
+    ],
+    "board": [
+     "Qs",
+     "4h",
+     "3c",
+     "3d"
+    ],
+    "token": "TOKEN"
+   }
+  },
+  {
+   "sent": "k",
+   "resp": {
+    "old_action": "b200c/kk/",
+    "action": "b200c/kk/kb200",
+    "client_pos": 0,
+    "hole_cards": [
+     "Jd",
+     "8h"
+    ],
+    "board": [
+     "Qs",
+     "4h",
+     "3c",
+     "3d"
+    ],
+    "token": "TOKEN"
+   }
+  },
+  {
+   "sent": "c",
+   "resp": {
+    "old_action": "b200c/kk/kb200",
+    "action": "b200c/kk/kb200c/",
+    "client_pos": 0,
+    "hole_cards": [
+     "Jd",
+     "8h"
+    ],
+    "board": [
+     "Qs",
+     "4h",
+     "3c",
+     "3d",
+     "4d"
+    ],
+    "token": "TOKEN"
+   }
+  },
+  {
+   "sent": "k",
+   "resp": {
+    "old_action": "b200c/kk/kb200c/",
+    "action": "b200c/kk/kb200c/kb400",
+    "client_pos": 0,
+    "hole_cards": [
+     "Jd",
+     "8h"
+    ],
+    "board": [
+     "Qs",
+     "4h",
+     "3c",
+     "3d",
+     "4d"
+    ],
+    "token": "TOKEN"
+   }
+  },
+  {
+   "sent": "c",
+   "resp": {
+    "old_action": "b200c/kk/kb200c/kb400",
+    "action": "b200c/kk/kb200c/kb400c",
+    "client_pos": 0,
+    "hole_cards": [
+     "Jd",
+     "8h"
+    ],
+    "board": [
+     "Qs",
+     "4h",
+     "3c",
+     "3d",
+     "4d"
+    ],
+    "bot_hole_cards": [
+     "Td",
+     "4c"
+    ],
+    "winnings": -800,
+    "won_pot": -1600,
+    "session_num_hands": 1,
+    "baseline_winnings": -600,
+    "session_total": -800,
+    "session_baseline_total": -600,
+    "token": "TOKEN"
+   }
+  }
+ ],
+ [
+  {
+   "resp": {
+    "old_action": "",
+    "action": "",
+    "client_pos": 1,
+    "hole_cards": [
+     "Qd",
+     "5h"
+    ],
+    "board": [],
+    "token": "TOKEN"
+   }
+  },
+  {
+   "sent": "c",
+   "resp": {
+    "old_action": "",
+    "action": "cb300",
+    "client_pos": 1,
+    "hole_cards": [
+     "Qd",
+     "5h"
+    ],
+    "board": [],
+    "token": "TOKEN"
+   }
+  },
+  {
+   "sent": "c",
+   "resp": {
+    "old_action": "cb300",
+    "action": "cb300c/b300",
+    "client_pos": 1,
+    "hole_cards": [
+     "Qd",
+     "5h"
+    ],
+    "board": [
+     "6d",
+     "5s",
+     "4s"
+    ],
+    "token": "TOKEN"
+   }
+  },
+  {
+   "sent": "c",
+   "resp": {
+    "old_action": "cb300c/b300",
+    "action": "cb300c/b300c/b600",
+    "client_pos": 1,
+    "hole_cards": [
+     "Qd",
+     "5h"
+    ],
+    "board": [
+     "6d",
+     "5s",
+     "4s",
+     "Qh"
+    ],
+    "token": "TOKEN"
+   }
+  },
+  {
+   "sent": "c",
+   "resp": {
+    "old_action": "cb300c/b300c/b600",
+    "action": "cb300c/b300c/b600c/k",
+    "client_pos": 1,
+    "hole_cards": [
+     "Qd",
+     "5h"
+    ],
+    "board": [
+     "6d",
+     "5s",
+     "4s",
+     "Qh",
+     "2d"
+    ],
+    "token": "TOKEN"
+   }
+  },
+  {
+   "sent": "k",
+   "resp": {
+    "old_action": "cb300c/b300c/b600c/k",
+    "action": "cb300c/b300c/b600c/kk",
+    "client_pos": 1,
+    "hole_cards": [
+     "Qd",
+     "5h"
+    ],
+    "board": [
+     "6d",
+     "5s",
+     "4s",
+     "Qh",
+     "2d"
+    ],
+    "bot_hole_cards": [
+     "Ad",
+     "7d"
+    ],
+    "winnings": 1200,
+    "won_pot": 2400,
+    "session_num_hands": 2,
+    "baseline_winnings": 1400,
+    "session_total": 400,
+    "session_baseline_total": 800,
+    "token": "TOKEN"
+   }
+  }
+ ],
+ [
+  {
+   "resp": {
+    "old_action": "",
+    "action": "b200",
+    "client_pos": 0,
+    "hole_cards": [
+     "Ah",
+     "4h"
+    ],
+    "board": [],
+    "token": "TOKEN"
+   }
+  },
+  {
+   "sent": "c",
+   "resp": {
+    "old_action": "b200",
+    "action": "b200c/",
+    "client_pos": 0,
+    "hole_cards": [
+     "Ah",
+     "4h"
+    ],
+    "board": [
+     "5c",
+     "4c",
+     "2h"
+    ],
+    "token": "TOKEN"
+   }
+  },
+  {
+   "sent": "k",
+   "resp": {
+    "old_action": "b200c/",
+    "action": "b200c/kb200",
+    "client_pos": 0,
+    "hole_cards": [
+     "Ah",
+     "4h"
+    ],
+    "board": [
+     "5c",
+     "4c",
+     "2h"
+    ],
+    "token": "TOKEN"
+   }
+  },
+  {
+   "sent": "c",
+   "resp": {
+    "old_action": "b200c/kb200",
+    "action": "b200c/kb200c/",
+    "client_pos": 0,
+    "hole_cards": [
+     "Ah",
+     "4h"
+    ],
+    "board": [
+     "5c",
+     "4c",
+     "2h",
+     "2s"
+    ],
+    "token": "TOKEN"
+   }
+  },
+  {
+   "sent": "k",
+   "resp": {
+    "old_action": "b200c/kb200c/",
+    "action": "b200c/kb200c/kk/",
+    "client_pos": 0,
+    "hole_cards": [
+     "Ah",
+     "4h"
+    ],
+    "board": [
+     "5c",
+     "4c",
+     "2h",
+     "2s",
+     "5h"
+    ],
+    "token": "TOKEN"
+   }
+  },
+  {
+   "sent": "k",
+   "resp": {
+    "old_action": "b200c/kb200c/kk/",
+    "action": "b200c/kb200c/kk/kk",
+    "client_pos": 0,
+    "hole_cards": [
+     "Ah",
+     "4h"
+    ],
+    "board": [
+     "5c",
+     "4c",
+     "2h",
+     "2s",
+     "5h"
+    ],
+    "bot_hole_cards": [
+     "9s",
+     "8s"
+    ],
+    "winnings": 400,
+    "won_pot": 800,
+    "session_num_hands": 3,
+    "baseline_winnings": -200,
+    "session_total": 800,
+    "session_baseline_total": 600,
+    "token": "TOKEN"
+   }
+  }
+ ],
+ [
+  {
+   "resp": {
+    "old_action": "",
+    "action": "",
+    "client_pos": 1,
+    "hole_cards": [
+     "Ah",
+     "3h"
+    ],
+    "board": [],
+    "token": "TOKEN"
+   }
+  },
+  {
+   "sent": "b20000",
+   "resp": {
+    "old_action": "",
+    "action": "b20000f",
+    "client_pos": 1,
+    "hole_cards": [
+     "Ah",
+     "3h"
+    ],
+    "board": [],
+    "bot_hole_cards": [
+     "6s",
+     "2h"
+    ],
+    "winnings": 100,
+    "won_pot": 20100,
+    "session_num_hands": 4,
+    "baseline_winnings": 0,
+    "session_total": 900,
+    "session_baseline_total": 600,
+    "token": "TOKEN"
+   }
+  }
+ ],
+ [
+  {
+   "resp": {
+    "old_action": "",
+    "action": "",
+    "client_pos": 1,
+    "hole_cards": [
+     "As",
+     "Ah"
+    ],
+    "board": [],
+    "token": "TOKEN"
+   }
+  },
+  {
+   "sent": "b20000",
+   "synthetic": true,
+   "resp": {
+    "old_action": "",
+    "action": "b20000c///",
+    "client_pos": 1,
+    "hole_cards": [
+     "As",
+     "Ah"
+    ],
+    "board": [
+     "2c",
+     "7d",
+     "9h",
+     "Js",
+     "Qd"
+    ],
+    "bot_hole_cards": [
+     "Kd",
+     "Kc"
+    ],
+    "winnings": 20000,
+    "won_pot": 40000,
+    "baseline_winnings": 16000,
+    "token": "TOKEN"
+   }
+  }
+ ]
+]

@@ -167,8 +167,9 @@ export function MatchView({ matchKey, seatToken, playAs }: { matchKey: string; s
               <span>{cfg.mode === 'freezeout' ? 'Freezeout' : cfg.mode === 'cash' ? `Cash, ${cfg.hands} hands` : `${cfg.hands} hands`}</span>
               <span>Stack {cfg.starting_stack.toLocaleString('en-US')}</span>
               <span>{cfg.structure.name}</span>
-              {start?.dealer === 'gto_wizard'
-                ? <span className="muted" title="GTO Wizard deals on its own server, so there is no seed to replay">Dealt by GTO Wizard</span>
+              {start?.dealer
+                ? <span className="muted" title="It deals on its own server, so there is no seed to replay">
+                    Dealt by {(start.seats.find(x => x.name === start.dealer) as any)?.title ?? start.dealer}</span>
                 : <span className="muted">seed {cfg.seed}</span>}
             </span>
           )}

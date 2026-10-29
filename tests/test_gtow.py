@@ -11,7 +11,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from arena import gtow
+from arena import external, gtow
 from arena.events import read_events
 from arena.seats import Seat
 from arena.verify import verify_match_dir
@@ -97,11 +97,11 @@ def test_match_follows_the_recording_and_verifies(tmp_path):
     winnings = [h[-1]["game_state"]["winnings"] for h in HANDS]
     assert [e["deltas"]["caller"] for e in ends] == winnings
     assert all(e["deltas"]["gto_wizard"] == -e["deltas"]["caller"] for e in ends)
-    assert [e["aivat"]["caller"] for e in ends] == [h[-1]["game_state"]["aivat_score"] for h in HANDS]
+    assert [e["score"]["caller"] for e in ends] == [h[-1]["game_state"]["aivat_score"] for h in HANDS]
     result = {r["bot"]: r for r in summary["results"]}
     assert result["caller"]["delta"] == sum(winnings)
     assert result["caller"]["bb_per_100"] == round(sum(winnings) / 100 * 100 / 5, 2)
-    assert summary["aivat"]["caller"]["hands"] == 5
+    assert summary["score"]["caller"]["hands"] == 5 and summary["score"]["caller"]["kind"] == "AIVAT"
 
     report = verify_match_dir(Path(summary["run_dir"]))
     assert report["ok"], report["problems"]
@@ -118,7 +118,7 @@ def test_gto_wizard_folding_preflop(tmp_path):
     assert of_type(events, "award") == [{"type": "award", "hand": 0, "bot": "caller",
                                          "amount": 150, "pot": "main"}]
     end = of_type(events, "hand_end")[0]
-    assert end["gtow_hole"] == ["Td", "2h"] and end["deltas"] == {"caller": 50, "gto_wizard": -50}
+    assert end["opp_hole"] == {"gto_wizard": ["Td", "2h"]} and end["deltas"] == {"caller": 50, "gto_wizard": -50}
     assert not of_type(events, "showdown")
 
 
@@ -178,19 +178,23 @@ def test_concurrent_hands_are_logged_in_order(tmp_path):
 
 
 def test_workers_default_to_one_when_watched_or_played_live():
-    assert gtow.default_workers(Caller()) == gtow.DEFAULT_WORKERS
-    assert gtow.default_workers(Caller(), pace_ms=600) == 1
+    g = gtow.GTOWizard()
+    assert external.default_workers(g, Caller()) == gtow.DEFAULT_WORKERS
+    assert external.default_workers(g, Caller(), pace_ms=600) == 1
     human = Caller()
     human.kind = "human"
-    assert gtow.default_workers(human) == 1
+    assert external.default_workers(g, human) == 1
 
 
 def test_specs_must_be_one_player_against_gto_wizard():
-    assert gtow.split_specs(["shark", "gto_wizard"]) == ("shark", 0)
-    assert gtow.split_specs(["GTO_Wizard", "human:Me"]) == ("human:Me", 1)
-    for bad in (["shark", "aggressor", "gto_wizard"], ["gto_wizard", "gto_wizard"], ["gto_wizard"]):
+    opp, hero, idx = external.split_specs(["shark", "gto_wizard"])
+    assert (opp.name, hero, idx) == ("gto_wizard", "shark", 0)
+    opp, hero, idx = external.split_specs(["SLUMBOT", "human:Me"])
+    assert (opp.name, hero, idx) == ("slumbot", "human:Me", 1)
+    for bad in (["shark", "aggressor", "gto_wizard"], ["gto_wizard", "gto_wizard"], ["gto_wizard"],
+                ["gto_wizard", "slumbot"]):
         with pytest.raises(ValueError, match="heads-up"):
-            gtow.split_specs(bad)
+            external.split_specs(bad)
 
 
 @pytest.mark.parametrize("reply, owed, legal, expected", [
@@ -208,7 +212,7 @@ def test_specs_must_be_one_player_against_gto_wizard():
 ])
 def test_replies_become_api_actions(reply, owed, legal, expected):
     rr = {"min": 100, "max": 19725} if "b" in legal else None
-    assert gtow.to_api_action(reply, {"amount_owed": owed}, legal, rr) == expected
+    assert external.to_api_action(reply, {"amount_owed": owed}, legal, rr) == expected
 
 
 def test_a_changed_game_is_refused():
@@ -220,7 +224,7 @@ def test_a_changed_game_is_refused():
 
 
 def test_tracker_all_in_and_runout(tmp_path):
-    t = gtow.HandTracker({"a": 0, "b": 1}, sb="a", bb="b", stack=20000,
+    t = external.HandTracker({"a": 0, "b": 1}, sb="a", bb="b", stack=20000,
                          blinds={"sb": 50, "bb": 100, "ante": 0})
     assert t.apply("b20000")["action"] == "all_in"
     call = t.apply("c")
@@ -274,7 +278,7 @@ def test_server_refuses_what_gto_wizard_cant_play(jobs, p, match):
 
 def test_server_refuses_without_a_key(jobs, monkeypatch):
     monkeypatch.delenv("GTO_WIZARD_API_KEY")
-    monkeypatch.setattr(gtow, "REPO_ENV", Path("/nonexistent/.env"))
+    monkeypatch.setattr(external, "REPO_ENV", Path("/nonexistent/.env"))
     with pytest.raises(ValueError, match="GTO_WIZARD_API_KEY"):
         jobs.start_match({"bots": ["shark", "gto_wizard"]})
 
@@ -289,13 +293,16 @@ def test_cli_refuses_flags_that_change_the_game(capsys):
     assert "only applies to matches against gto_wizard" in capsys.readouterr().err
 
 
-def test_api_says_whether_gto_wizard_is_configured(tmp_path, monkeypatch):
+def test_api_lists_external_bots_and_whether_they_can_play(tmp_path, monkeypatch):
     from fastapi.testclient import TestClient
     from arena.server import create_app
-    monkeypatch.setattr(gtow, "REPO_ENV", Path("/nonexistent/.env"))
+    monkeypatch.setattr(external, "REPO_ENV", Path("/nonexistent/.env"))
     monkeypatch.delenv("GTO_WIZARD_API_KEY", raising=False)
     with TestClient(create_app(tmp_path)) as c:
-        assert c.get("/api/gto_wizard").json()["configured"] is False
+        bots = {b["name"]: b for b in c.get("/api/external").json()}
+        assert bots["gto_wizard"]["configured"] is False and "GTO_WIZARD_API_KEY" in bots["gto_wizard"]["why"]
+        assert bots["slumbot"]["configured"] is True          # no key needed
         monkeypatch.setenv("GTO_WIZARD_API_KEY", "k")
-        info = c.get("/api/gto_wizard").json()
-    assert info["configured"] is True and (info["starting_stack"], info["bb"]) == (20000, 100)
+        bots = {b["name"]: b for b in c.get("/api/external").json()}
+    assert bots["gto_wizard"]["configured"] is True
+    assert (bots["slumbot"]["max_workers"], bots["slumbot"]["score_kind"]) == (3, "baseline")

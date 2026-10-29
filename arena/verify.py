@@ -193,9 +193,12 @@ def verify_events(events) -> dict:
         return report
     report["hands"] = sum(1 for e in events if e["type"] == "hand_start")
     report["decisions"] = sum(1 for e in events if e["type"] == "decision")
-    if events[0].get("dealer") == "gto_wizard":
-        # GTO Wizard dealt these hands on its server, so there is no seed to replay
-        report["warnings"].append("dealt by GTO Wizard: the cards can't be replayed, "
+    if events[0].get("dealer"):
+        # an external bot (GTO Wizard, Slumbot) dealt these hands on its server,
+        # so there is no seed to replay
+        dealer = next((s.get("title") for s in events[0]["seats"] if s["name"] == events[0]["dealer"]),
+                      None) or events[0]["dealer"]
+        report["warnings"].append(f"dealt by {dealer}: the cards can't be replayed, "
                                   "only the chip accounting is checked")
         report["problems"].extend(_check_accounting(events))
         report["ok"] = not report["problems"]
