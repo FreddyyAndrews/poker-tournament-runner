@@ -9,6 +9,7 @@ table's live log. Works while a run is still playing and after it ends.
 """
 
 import json
+import threading
 from itertools import combinations
 from pathlib import Path
 
@@ -31,6 +32,58 @@ def _status(match_dir: Path, active: bool) -> str:
 
 def _record(summary, **extra):
     return formats.match_record(summary, **extra) if summary and summary.get("results") else None
+
+
+# Live chips of running matches, read from their event logs. Pages poll this
+# every few seconds and logs grow to megabytes, so each log is read
+# incrementally: only the lines added since the last read.
+_live_cache = {}                    # events path -> state
+_live_lock = threading.Lock()
+
+
+def live_chips(match_dir: Path):
+    """Chips after the last finished hand of a match being played:
+    {"hand", "hands", "stacks", "delta"}, or None if it hasn't started.
+    stacks: chips in front of each player (in cash mode, starting stack +
+    net won); delta: chips won so far."""
+    f = Path(match_dir) / EVENTS_FILE
+    if not f.is_file():
+        return None
+    with _live_lock:
+        st = _live_cache.get(f)
+        size = f.stat().st_size
+        if st is None or size < st["offset"]:
+            st = {"offset": 0, "start": None, "cash": False, "hands": None, "done": 0,
+                  "stacks": {}, "delta": {}}
+            _live_cache[f] = st
+        if size > st["offset"]:
+            with open(f, "rb") as fh:
+                fh.seek(st["offset"])
+                chunk = fh.read(size - st["offset"])
+            end = chunk.rfind(b"\n") + 1            # only whole lines
+            st["offset"] += end
+            for line in chunk[:end].splitlines():
+                if st["start"] is None and b'"match_start"' in line:
+                    e = json.loads(line)
+                    cfg = e["config"]
+                    st.update(start=cfg["starting_stack"], cash=cfg["mode"] == "cash",
+                              hands=cfg["hands"] if cfg["mode"] != "freezeout" else None)
+                    st["stacks"] = {x["name"]: cfg["starting_stack"] for x in e["seats"]}
+                    st["delta"] = {x["name"]: 0 for x in e["seats"]}
+                elif b'"hand_end"' in line and st["start"] is not None:
+                    e = json.loads(line)
+                    st["done"] += 1
+                    for n, d in e["deltas"].items():
+                        st["delta"][n] = st["delta"].get(n, 0) + d
+                    if st["cash"]:
+                        st["stacks"] = {n: st["start"] + d for n, d in st["delta"].items()}
+                    else:
+                        st["stacks"].update(e["stacks"])
+                        st["delta"] = {n: s - st["start"] for n, s in st["stacks"].items()}
+        if st["start"] is None:
+            return None
+        return {"hand": st["done"], "hands": st["hands"], "stacks": dict(st["stacks"]),
+                "delta": dict(st["delta"])}
 
 
 def run_progress(run_dir: Path, run: dict, run_id: str, active: bool = False):
@@ -73,6 +126,10 @@ def bracket_progress(run_dir: Path, cfg, run_id: str, active: bool = False) -> d
                 summary = _summary(mdir)
                 tie["status"] = _status(mdir, active)
                 rec = _record(summary, players=[a, b])
+                if tie["status"] == "running":
+                    live = live_chips(mdir)
+                    if live:
+                        tie.update(stacks=live["stacks"], hands=live["hand"], live=live)
                 if rec:
                     w, _, how = formats.two_player_winner(rec, derive_seed(cfg.seed, "tiebreak", mid))
                     tie.update(winner=w, how=how, hands=rec["hands"],
@@ -91,7 +148,9 @@ def bracket_progress(run_dir: Path, cfg, run_id: str, active: bool = False) -> d
              for i in range(len(rounds))]
     for r, name in zip(rounds, names):
         r["name"] = name
-    return {"kind": "bracket", "rounds": rounds, "champion": champion}
+    live = {t["key"]: {**t["live"], "players": t["players"]}
+            for r in rounds for t in r["ties"] if t.get("live")}
+    return {"kind": "bracket", "rounds": rounds, "champion": champion, "live": live}
 
 
 # ---------------------------------------------------------------------------
@@ -109,12 +168,15 @@ def round_robin_progress(run_dir: Path, cfg, run_id: str, active: bool = False) 
             rec = _record(summary, pairing=pid, leg=leg, players=[a, b])
             if rec:
                 records.append(rec)
+            status = _status(mdir, active)
+            live = live_chips(mdir) if status == "running" else None
             legs.append({"match_id": mid, "key": f"{run_id}/matches/{mid}", "leg": leg,
-                         "status": _status(mdir, active),
+                         "status": status, "live": live,
                          "delta": {r["bot"]: r["delta"] for r in rec["results"]} if rec else None})
         done = all(l["status"] == "complete" for l in legs)
-        delta = {a: sum((l["delta"] or {}).get(a, 0) for l in legs),
-                 b: sum((l["delta"] or {}).get(b, 0) for l in legs)}
+        # chips won so far: finished legs, plus live legs up to their last finished hand
+        so_far = [l["delta"] or (l["live"] or {}).get("delta") or {} for l in legs]
+        delta = {a: sum(d.get(a, 0) for d in so_far), b: sum(d.get(b, 0) for d in so_far)}
         result = None
         if done:
             result = "draw" if delta[a] == delta[b] else (a if delta[a] > delta[b] else b)
@@ -126,7 +188,21 @@ def round_robin_progress(run_dir: Path, cfg, run_id: str, active: bool = False) 
     complete = [r for r in records
                 if next(p for p in pairings if p["pairing"] == r["pairing"])["status"] == "complete"]
     table = round_robin.standings(cfg, complete) if complete else []
-    return {"kind": "round_robin", "bots": names, "pairings": pairings, "standings": table}
+    # every bot's chips won so far, across finished and live matches
+    chips = {n: {"bot": n, "delta": 0, "live": 0, "playing": 0} for n in names}
+    for p in pairings:
+        for leg in p["legs"]:
+            for n in p["players"]:
+                if leg["delta"]:
+                    chips[n]["delta"] += leg["delta"].get(n, 0)
+                elif leg["live"]:
+                    chips[n]["delta"] += leg["live"]["delta"].get(n, 0)
+                    chips[n]["live"] += leg["live"]["delta"].get(n, 0)
+                    chips[n]["playing"] += 1
+    return {"kind": "round_robin", "bots": names, "pairings": pairings, "standings": table,
+            "chips": sorted(chips.values(), key=lambda c: -c["delta"]),
+            "live": {l["key"]: {**l["live"], "players": p["players"]}
+                     for p in pairings for l in p["legs"] if l["live"]}}
 
 
 # ---------------------------------------------------------------------------

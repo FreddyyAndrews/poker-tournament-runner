@@ -82,3 +82,28 @@ def test_series_progress(client):
     assert p["runs_done"] == 5 and p["runs"] == 5
     assert p["aggregate"] == r["data"]["aggregate"]
     assert r["data"]["status"] == "complete"
+
+
+def test_live_chips_reads_a_growing_log(tmp_path):
+    """Chips of a match still being played, after each finished hand, reading
+    only what was added to the log since the last call."""
+    from arena.server.progress import live_chips
+    d = tmp_path / "m"
+    d.mkdir()
+    f = d / "events.jsonl"
+    assert live_chips(d) is None
+    start = {"type": "match_start", "config": {"starting_stack": 1000, "mode": "cash", "hands": 50},
+             "seats": [{"name": "a"}, {"name": "b"}]}
+    f.write_text(json.dumps(start) + "\n")
+    assert live_chips(d) == {"hand": 0, "hands": 50, "stacks": {"a": 1000, "b": 1000},
+                             "delta": {"a": 0, "b": 0}}
+    with open(f, "a") as fh:
+        fh.write(json.dumps({"type": "hand_end", "stacks": {"a": 1200, "b": 800},
+                             "deltas": {"a": 200, "b": -200}}) + "\n")
+        fh.write('{"type": "hand_end", "stacks"')            # a line still being written
+    assert live_chips(d)["delta"] == {"a": 200, "b": -200}
+    with open(f, "a") as fh:
+        fh.write(': {"a": 900, "b": 1100}, "deltas": {"a": -300, "b": 300}}\n')
+    live = live_chips(d)
+    assert live["hand"] == 2 and live["delta"] == {"a": -100, "b": 100}
+    assert live["stacks"] == {"a": 900, "b": 1100}             # cash: start + net
