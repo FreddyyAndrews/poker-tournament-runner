@@ -262,7 +262,10 @@ def cmd_run(args):
         _fail(str(e), args.json)
 
     runs = opts.get("runs") or 1
-    workers = opts.get("workers") or 1
+    try:
+        workers = formats.normalise_workers(opts.get("workers"))
+    except ValueError as e:
+        _fail(str(e), args.json)
     use_docker = True if opts.get("docker") else None
     if not args.local:
         result = _run_on_server(args, cfg, runs, workers, use_docker)
@@ -734,7 +737,9 @@ def build_parser():
                    help="heads-up: replay each deal with seats swapped")
     r.add_argument("--seeding", choices=("random", "given"), help="bracket seeding")
     r.add_argument("--runs", type=int, help="play the tournament N times and aggregate (a series)")
-    r.add_argument("--workers", type=int, help="matches/runs to play in parallel (default 1)")
+    r.add_argument("--workers", type=lambda v: formats.normalise_workers(v), metavar="N|max",
+                   help="matches (or series runs) to play in parallel (default 1); max plays "
+                        "every match the tournament allows at once (a series: one run per CPU)")
     _add_common_match_flags(r, run=True)
     r.set_defaults(func=cmd_run)
 

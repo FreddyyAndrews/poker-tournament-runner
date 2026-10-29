@@ -65,6 +65,8 @@ export function Launch() {
   const [seeding, setSeeding] = useState<'random' | 'given'>('random')
   const [runs, setRuns] = useState(1)
   const [workers, setWorkers] = useState(4)
+  const [maxParallel, setMaxParallel] = useState(false)    // as many matches at once as the tournament allows
+  const [cpus, setCpus] = useState<number | null>(null)
   const [pace, setPace] = useState(600)
   const [seed, setSeed] = useState('')
   const [timeLimit, setTimeLimit] = useState('')
@@ -80,6 +82,7 @@ export function Launch() {
     fetch('/api/bots').then(r => r.json()).then(setBots).catch(e => setError(String(e)))
     fetch('/api/structures').then(r => r.json()).then(d => setDefaults(d.formats))
     fetch('/api/external').then(r => r.json()).then(setExternals).catch(() => setExternals([]))
+    fetch('/api/health').then(r => r.json()).then(h => setCpus(h.cpus ?? null)).catch(() => {})
   }, [])
   useEffect(() => {
     fetch(`/api/structures?stack=${stack || 10000}`).then(r => r.json()).then(d => setPresets(d.presets))
@@ -163,7 +166,7 @@ export function Launch() {
     const freeze = (players: number) => Math.min(hands, 60 + 40 * players)
     const perMatch = mode === 'freezeout' ? freeze(format === 'table' ? n : format === 'mtt' ? Math.min(n, tableSize) : 2) : hands
     // Matches play `workers` at a time: a round robin all together, a bracket round by round.
-    const w = Math.max(1, workers)
+    const w = maxParallel ? Infinity : Math.max(1, workers)
     let waves = legs
     if (format === 'round_robin') waves = Math.ceil((n * (n - 1) / 2) * legs / w)
     if (format === 'bracket') {
@@ -174,7 +177,17 @@ export function Launch() {
     const totalHands = format === 'mtt' ? freeze(n) : perMatch * waves
     const minutes = (totalHands * 7 * pace) / 60000
     return minutes < 2 ? 'about a minute' : minutes < 90 ? `roughly ${Math.round(minutes)} minutes` : `roughly ${(minutes / 60).toFixed(1)} hours`
-  }, [entrants, series, pace, format, duplicate, mode, hands, tableSize, vsExt, g, workers])
+  }, [entrants, series, pace, format, duplicate, mode, hands, tableSize, vsExt, g, workers, maxParallel])
+
+  // The most matches that can be in play at once with Max: a round robin's every
+  // match, or a bracket's first round.
+  const peak = useMemo(() => {
+    const n = entrants.length
+    const legs = format === 'round_robin' && duplicate ? 2 : 1
+    if (format === 'round_robin') return (n * (n - 1) / 2) * legs
+    if (format === 'bracket') return Math.max(0, n - 2 ** Math.ceil(Math.log2(Math.max(n, 1))) / 2)
+    return 0
+  }, [entrants, format, duplicate])
 
   async function launch() {
     if (problem) return
@@ -201,7 +214,7 @@ export function Launch() {
         location.hash = me ? seatHash(r.match_key, me.token, me.name) : `#/match/${r.match_key}`
       } else {
         const r = await post('/api/runs', {
-          ...common, format, name: name.trim() || undefined, runs, workers,
+          ...common, format, name: name.trim() || undefined, runs, workers: maxParallel ? 'max' : workers,
           table_size: format === 'mtt' ? tableSize : undefined,
           duplicate: format === 'round_robin' || format === 'table' ? duplicate : undefined,
           seeding: format === 'bracket' ? seeding : undefined,
@@ -378,8 +391,15 @@ export function Launch() {
                 </select></label>
               {series && <label>Runs<input type="number" min={2} value={runs} onChange={e => setRuns(Math.max(2, Number(e.target.value)))} data-testid="runs" /></label>}
               {(series || (format !== 'table' && format !== 'mtt')) && <label>{series ? 'Runs in parallel' : 'Matches in parallel'}
-                <input type="number" min={1} max={32} value={workers} onChange={e => setWorkers(Math.max(1, Number(e.target.value)))}
-                       data-testid="workers" /></label>}
+                {maxParallel ? <input value="all" disabled data-testid="workers" />
+                  : <input type="number" min={1} max={32} value={workers}
+                           onChange={e => setWorkers(Math.max(1, Number(e.target.value)))} data-testid="workers" />}</label>}
+              {(series || (format !== 'table' && format !== 'mtt')) && (
+                <label className="check" style={{ alignSelf: 'end' }}>
+                  <input type="checkbox" checked={maxParallel} onChange={e => setMaxParallel(e.target.checked)}
+                         data-testid="workers-max" />
+                  Max {series ? '(one run per CPU)' : '(as many as the tournament allows)'}</label>
+              )}
             </div>
             {!series && (
               <div className="seg" role="group" style={{ marginTop: 10 }}>
@@ -390,9 +410,13 @@ export function Launch() {
               </div>
             )}
             <p className="hint">{series ? 'A series always runs at full speed; any single match can be replayed afterwards.'
-              : PACES.find(p => p.ms === pace)?.blurb}
-              {!series && format !== 'table' && format !== 'mtt' && workers > 1 &&
-                ` Up to ${workers} matches play at once${pace ? ', each at this pace; follow any of them from Now playing on the run page' : ''}.`}</p>
+              : PACES.find(p => p.ms === pace)?.blurb + '.'}
+              {!series && format !== 'table' && format !== 'mtt' && (maxParallel || workers > 1) &&
+                ` ${maxParallel ? (format === 'round_robin' ? `All ${peak || ''} matches play at once`
+                  : 'Every match in a round plays at once; the next round starts when it ends')
+                  : `Up to ${workers} matches play at once`}${pace ? ', each at this pace; follow any of them from Now playing on the run page' : ''}.`}
+              {!series && maxParallel && cpus && peak > cpus &&
+                ` That is more matches than this machine's ${cpus} CPUs, so slow bots may run into their time limit.`}</p>
           </section>
 
           <details className="section">

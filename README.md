@@ -86,6 +86,7 @@ poker export <run-id> --bot shark                 # zip of results for one parti
 | `round_robin` | Every pair plays heads-up. Points: win 1, draw 0.5; then chips won. Prints a head-to-head table | duplicate cash, 200 hands |
 | `mtt` | Multi-table freezeout: random seating at tables of `table_size`, tables balanced and broken as players bust, down to a final table | freezeout, `standard` blinds, 6 per table |
 
+- **In parallel:** `--workers N` plays up to N matches at once (a series: N runs). `--workers max` plays every match the tournament allows at once: a round robin all together, a bracket a whole round at a time (the next round waits for it), every table of a multi-table, and for a series one run per CPU. With more matches than CPUs, slow bots may hit their time limit. Seeds don't depend on it, so the results are the same at any setting.
 - **Settings:** `bots`, `names`, `mode` (`fixed`/`cash`/`freezeout`), `hands`, `starting_stack`, `blinds`, `time_limit_ms`, `seed`, `table_size`, `duplicate`, `seeding`, plus `runs`, `workers` and `docker`. Command-line flags override the config file.
 - **Results** live in `data/runs/<run-id>/`: `run.json` holds the standings and every match, and `matches/<match-id>/` holds each match's log.
 - **Series** (`--runs N`) play the same format N times with seeds derived from one series seed, and report each bot's wins, win rate with a 95% confidence interval, top-3 rate, average place, bb/100 and finish distribution.

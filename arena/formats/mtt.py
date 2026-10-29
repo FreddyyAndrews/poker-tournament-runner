@@ -26,6 +26,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import arena
 from arena.events import EventLog
+from arena import formats
 from arena.formats import match_record
 from arena.pacing import Cancelled, Pacer
 from arena.seeds import derive_seed
@@ -236,7 +237,9 @@ def play(cfg, ctx) -> dict:
         try:
             pacer = Pacer(ctx.pace_ms, ctx.cancel) if (ctx.pace_ms or ctx.cancel) else None
             outcome = play_mtt(seats, match_cfg, cfg.table_size, MATCH_ID, log,
-                               workers=max(ctx.workers, len(seats)) if ctx.pace_ms else ctx.workers,
+                               # paced, or max: every table plays its hand at the same time
+                               workers=len(seats) if ctx.pace_ms or ctx.workers == formats.MAX_WORKERS
+                               else ctx.workers,
                                pacer=pacer, table_logs_dir=run_dir / "tables")
         except Cancelled:
             interrupted = "cancelled"

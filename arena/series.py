@@ -8,6 +8,7 @@ plays its own matches one at a time.
 """
 
 import json
+import os
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
@@ -81,6 +82,9 @@ def run_series(cfg: formats.RunConfig, runs: int, series_id: str = None,
                 "winner": result["standings"][0]["bot"]})
         return result
 
+    workers = formats.normalise_workers(workers)
+    if workers == formats.MAX_WORKERS:          # a run per CPU: each run plays its matches in turn
+        workers = os.cpu_count() or 4
     try:
         if workers > 1 and runs > 1:
             with ThreadPoolExecutor(max_workers=workers) as pool:

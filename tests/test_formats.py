@@ -303,3 +303,43 @@ def test_cli_run_series_from_flags(tmp_path):
     assert out.returncode == 0, out.stderr
     s = json.loads(out.stdout)
     assert s["kind"] == "series" and s["runs"] == 3 and len(s["winners"]) == 3
+
+
+# ---------------------------------------------------------------------------
+# workers = max: every match the tournament allows at once
+# ---------------------------------------------------------------------------
+
+def test_workers_max_is_parsed():
+    n = formats.normalise_workers
+    assert n(None) == n("") == 1 and n(3) == n("3") == 3
+    assert n("max") == n("MAX") == n(0) == formats.MAX_WORKERS
+    with pytest.raises(ValueError):
+        n(-1)
+
+
+def test_max_runs_every_item_at_once(tmp_path):
+    import threading
+    ctx = formats.RunContext(run_id="r", run_dir=tmp_path, seed=1, specs=[], workers=formats.MAX_WORKERS)
+    started, gate = [], threading.Barrier(6, timeout=10)
+
+    def fn(x):
+        started.append(x)
+        gate.wait()                 # only passes once all 6 are running together
+        return x * 2
+    assert ctx.parallel(fn, list(range(6))) == [0, 2, 4, 6, 8, 10]
+    assert sorted(started) == list(range(6))
+
+
+def test_round_robin_with_max_workers_matches_one_at_a_time(tmp_path):
+    cfg = dict(format="round_robin", bots=["shark", "aggressor", "mathematician"], mode="cash",
+               hands=20, seed=9)
+    one = run(RunConfig(**cfg), run_id="one", runs_dir=tmp_path, workers=1)
+    many = run(RunConfig(**cfg), run_id="many", runs_dir=tmp_path, workers="max")
+    assert one["standings"] == many["standings"]           # same seeds: same results
+    assert verify_run(str(tmp_path / "many"))["ok"]
+
+
+def test_cli_accepts_workers_max():
+    from arena.cli import build_parser
+    args = build_parser().parse_args(["run", "--format", "round_robin", "--bots", "a", "b", "--workers", "max"])
+    assert args.workers == formats.MAX_WORKERS

@@ -176,7 +176,7 @@ class JobManager:
         cfg = formats.RunConfig(**fields)
         botlib.resolve_all(cfg.bots, names=cfg.names)          # fail fast on unknown bots
         runs = p.get("runs") or 1
-        workers = p.get("workers") or 1
+        workers = formats.normalise_workers(p.get("workers"))
         use_docker = True if p.get("docker") else None
         if runs > 1:
             run_id = p.get("id") or _stamp(f"series_{cfg.format}", cfg.seed)

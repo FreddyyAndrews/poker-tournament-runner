@@ -13,10 +13,11 @@ matches. This works for matches started from the CLI too.
 import asyncio
 import sys
 import json
+import os
 import tempfile
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Union
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
@@ -82,7 +83,7 @@ class RunRequest(BaseModel):
     duplicate: Optional[bool] = None
     seeding: Optional[str] = None
     runs: int = 1
-    workers: int = 1
+    workers: Union[int, str] = 1           # matches (or series runs) at once; 0 or "max": as many as possible
     docker: bool = False
     pace_ms: Optional[int] = None          # default: DEFAULT_PACE_MS for one run, 0 for series
     id: Optional[str] = None
@@ -149,7 +150,8 @@ def create_app(runs_dir: Path = DEFAULT_RUNS_DIR, port: int = 8765) -> FastAPI:
 
     @app.get("/api/health")
     def health():
-        return {"ok": True, "version": arena.__version__, "runs_dir": str(runs_dir)}
+        return {"ok": True, "version": arena.__version__, "runs_dir": str(runs_dir),
+                "cpus": os.cpu_count()}
 
     @app.get("/api/bots")
     def list_bots():

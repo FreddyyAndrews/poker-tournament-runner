@@ -80,6 +80,24 @@ class RunConfig:
 
 RUN_OPTIONS = ("runs", "workers", "docker")
 
+# workers = MAX_WORKERS: play every match the tournament allows at once (a
+# round robin all together, a bracket a whole round at a time, every table of a
+# multi-table). A series plays this many runs at once: one per CPU.
+MAX_WORKERS = 0
+
+
+def normalise_workers(workers) -> int:
+    """None/1 -> 1, "max"/0 -> MAX_WORKERS, N -> N. Raises ValueError otherwise."""
+    if workers in (None, ""):
+        return 1
+    if isinstance(workers, str):
+        if workers.strip().lower() == "max":
+            return MAX_WORKERS
+        workers = int(workers)
+    if workers < 0:
+        raise ValueError("workers must be a positive number, or 0 / 'max' for as many as possible")
+    return workers
+
 
 def load_config(path: str, overrides: dict = None) -> tuple:
     """Read a YAML/JSON run config. Returns (RunConfig, options) where options
@@ -116,7 +134,7 @@ class RunContext:
     run_dir: Path
     seed: int
     specs: list                       # BotSpec per bot, unique names
-    workers: int = 1
+    workers: int = 1                  # MAX_WORKERS (0): as many as possible
     use_docker: bool = None
     progress: list = field(default_factory=list)   # callables(dict) for status updates
     pace_ms: int = 0                                 # slow matches down for live viewing
@@ -139,9 +157,11 @@ class RunContext:
         return summary
 
     def parallel(self, fn, items) -> list:
-        if self.workers <= 1 or len(items) <= 1:
+        """fn over items, `workers` at a time (with MAX_WORKERS: all at once)."""
+        n = len(items) if self.workers == MAX_WORKERS else min(self.workers, len(items))
+        if n <= 1:
             return [fn(x) for x in items]
-        with ThreadPoolExecutor(max_workers=self.workers) as pool:
+        with ThreadPoolExecutor(max_workers=n) as pool:
             return list(pool.map(fn, items))
 
     def save(self, result: dict):
@@ -170,7 +190,7 @@ def run(cfg: RunConfig, run_id: str = None, runs_dir: Path = DEFAULT_RUNS_DIR,
     specs = botlib.resolve_all(cfg.bots, names=cfg.names)
     run_id = run_id or f"{cfg.format}_{time.strftime('%Y%m%d_%H%M%S')}_{seed % 10**6:06d}"
     ctx = RunContext(run_id=run_id, run_dir=Path(runs_dir) / run_id, seed=seed, specs=specs,
-                     workers=max(1, workers), use_docker=use_docker, progress=list(progress),
+                     workers=normalise_workers(workers), use_docker=use_docker, progress=list(progress),
                      pace_ms=pace_ms or 0, cancel=cancel)
     module = _module(cfg.format)
     t0 = time.time()
