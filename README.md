@@ -349,6 +349,14 @@ demo.py         Upstream demo script
 
 ---
 
+## Contributing
+
+Bug reports, fixes and new reference bots are welcome. Open an issue or a pull request on [GitHub](https://github.com/FreddyyAndrews/poker-tournament-runner). Run `make test` before sending a PR, and `make web-test` if you touched the UI. See [CONTRIBUTING.md](CONTRIBUTING.md) for what can and can't change close to an event, and how to request a library for the sandbox.
+
+---
+
 ## License
 
-MIT. See [LICENSE](LICENSE). Based on [fullhouse-engine](https://github.com/uzlez/fullhouse-engine) by the Fullhouse Hackathon team.
+MIT. See [LICENSE](LICENSE).
+
+Forked from [fullhouse-engine](https://github.com/uzlez/fullhouse-engine) by the Fullhouse Hackathon team, also MIT. Their copyright notice is kept in [LICENSE](LICENSE) and must stay in copies of this project.
