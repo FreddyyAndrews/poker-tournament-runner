@@ -1,0 +1,1504 @@
+[
+ [
+  {
+   "hand_id": 7201785,
+   "game": {
+    "game_id": 1,
+    "game_name": "HUNL 200BB",
+    "game_format": "HUNL",
+    "starting_stack": 20000.0,
+    "blinds": [
+     100.0,
+     50.0
+    ],
+    "stack_reset_per_hand": true
+   },
+   "game_state": {
+    "street": "preflop",
+    "common_pot": 0.0,
+    "total_pot": 150.0,
+    "board_cards": "",
+    "is_hand_over": true,
+    "player_to_act": null,
+    "players": [
+     {
+      "name": "FreddyyBot",
+      "stack": 19900.0,
+      "position": "BB",
+      "hole_cards": "AcTs"
+     },
+     {
+      "name": "GTO Wizard",
+      "stack": 19950.0,
+      "position": "SB",
+      "hole_cards": "Td2h"
+     }
+    ],
+    "legal_actions": [],
+    "raise_range": null,
+    "action_history": [
+     "f"
+    ],
+    "has_gto_wizard_folded": true,
+    "winnings": 50.0,
+    "aivat_score": -14.50912
+   }
+  }
+ ],
+ [
+  {
+   "hand_id": 7201797,
+   "game": {
+    "game_id": 1,
+    "game_name": "HUNL 200BB",
+    "game_format": "HUNL",
+    "starting_stack": 20000.0,
+    "blinds": [
+     100.0,
+     50.0
+    ],
+    "stack_reset_per_hand": true
+   },
+   "game_state": {
+    "street": "preflop",
+    "common_pot": 0.0,
+    "total_pot": 150.0,
+    "board_cards": "",
+    "is_hand_over": false,
+    "player_to_act": "user",
+    "players": [
+     {
+      "name": "GTO Wizard",
+      "stack": 19900.0,
+      "position": "BB",
+      "hole_cards": null
+     },
+     {
+      "name": "FreddyyBot",
+      "stack": 19950.0,
+      "position": "SB",
+      "hole_cards": "Ah6c"
+     }
+    ],
+    "legal_actions": [
+     "f",
+     "c",
+     "b"
+    ],
+    "raise_range": {
+     "min": 200.0,
+     "max": 20000.0
+    },
+    "action_history": [],
+    "has_gto_wizard_folded": false,
+    "winnings": null,
+    "aivat_score": null
+   }
+  },
+  {
+   "sent": {
+    "action": "c"
+   },
+   "hand_id": 7201797,
+   "game": {
+    "game_id": 1,
+    "game_name": "HUNL 200BB",
+    "game_format": "HUNL",
+    "starting_stack": 20000.0,
+    "blinds": [
+     100.0,
+     50.0
+    ],
+    "stack_reset_per_hand": true
+   },
+   "game_state": {
+    "street": "preflop",
+    "common_pot": 0.0,
+    "total_pot": 450.0,
+    "board_cards": "",
+    "is_hand_over": false,
+    "player_to_act": "user",
+    "players": [
+     {
+      "name": "GTO Wizard",
+      "stack": 19650.0,
+      "position": "BB",
+      "hole_cards": null
+     },
+     {
+      "name": "FreddyyBot",
+      "stack": 19900.0,
+      "position": "SB",
+      "hole_cards": "Ah6c"
+     }
+    ],
+    "legal_actions": [
+     "f",
+     "c",
+     "b"
+    ],
+    "raise_range": {
+     "min": 600.0,
+     "max": 20000.0
+    },
+    "action_history": [
+     "c",
+     "b350"
+    ],
+    "has_gto_wizard_folded": false,
+    "winnings": null,
+    "aivat_score": null
+   }
+  },
+  {
+   "sent": {
+    "action": "c"
+   },
+   "hand_id": 7201797,
+   "game": {
+    "game_id": 1,
+    "game_name": "HUNL 200BB",
+    "game_format": "HUNL",
+    "starting_stack": 20000.0,
+    "blinds": [
+     100.0,
+     50.0
+    ],
+    "stack_reset_per_hand": true
+   },
+   "game_state": {
+    "street": "flop",
+    "common_pot": 700.0,
+    "total_pot": 931.0,
+    "board_cards": "6h4c7d",
+    "is_hand_over": false,
+    "player_to_act": "user",
+    "players": [
+     {
+      "name": "GTO Wizard",
+      "stack": 19419.0,
+      "position": "BB",
+      "hole_cards": null
+     },
+     {
+      "name": "FreddyyBot",
+      "stack": 19650.0,
+      "position": "SB",
+      "hole_cards": "Ah6c"
+     }
+    ],
+    "legal_actions": [
+     "f",
+     "c",
+     "b"
+    ],
+    "raise_range": {
+     "min": 462.0,
+     "max": 19650.0
+    },
+    "action_history": [
+     "c",
+     "b350",
+     "c",
+     "_",
+     "b231"
+    ],
+    "has_gto_wizard_folded": false,
+    "winnings": null,
+    "aivat_score": null
+   }
+  },
+  {
+   "sent": {
+    "action": "c"
+   },
+   "hand_id": 7201797,
+   "game": {
+    "game_id": 1,
+    "game_name": "HUNL 200BB",
+    "game_format": "HUNL",
+    "starting_stack": 20000.0,
+    "blinds": [
+     100.0,
+     50.0
+    ],
+    "stack_reset_per_hand": true
+   },
+   "game_state": {
+    "street": "turn",
+    "common_pot": 1162.0,
+    "total_pot": 2034.0,
+    "board_cards": "6h4c7dTs",
+    "is_hand_over": false,
+    "player_to_act": "user",
+    "players": [
+     {
+      "name": "GTO Wizard",
+      "stack": 18547.0,
+      "position": "BB",
+      "hole_cards": null
+     },
+     {
+      "name": "FreddyyBot",
+      "stack": 19419.0,
+      "position": "SB",
+      "hole_cards": "Ah6c"
+     }
+    ],
+    "legal_actions": [
+     "f",
+     "c",
+     "b"
+    ],
+    "raise_range": {
+     "min": 1744.0,
+     "max": 19419.0
+    },
+    "action_history": [
+     "c",
+     "b350",
+     "c",
+     "_",
+     "b231",
+     "c",
+     "_",
+     "b872"
+    ],
+    "has_gto_wizard_folded": false,
+    "winnings": null,
+    "aivat_score": null
+   }
+  },
+  {
+   "sent": {
+    "action": "c"
+   },
+   "hand_id": 7201797,
+   "game": {
+    "game_id": 1,
+    "game_name": "HUNL 200BB",
+    "game_format": "HUNL",
+    "starting_stack": 20000.0,
+    "blinds": [
+     100.0,
+     50.0
+    ],
+    "stack_reset_per_hand": true
+   },
+   "game_state": {
+    "street": "river",
+    "common_pot": 2906.0,
+    "total_pot": 3865.0,
+    "board_cards": "6h4c7dTs5c",
+    "is_hand_over": false,
+    "player_to_act": "user",
+    "players": [
+     {
+      "name": "GTO Wizard",
+      "stack": 17588.0,
+      "position": "BB",
+      "hole_cards": null
+     },
+     {
+      "name": "FreddyyBot",
+      "stack": 18547.0,
+      "position": "SB",
+      "hole_cards": "Ah6c"
+     }
+    ],
+    "legal_actions": [
+     "f",
+     "c",
+     "b"
+    ],
+    "raise_range": {
+     "min": 1918.0,
+     "max": 18547.0
+    },
+    "action_history": [
+     "c",
+     "b350",
+     "c",
+     "_",
+     "b231",
+     "c",
+     "_",
+     "b872",
+     "c",
+     "_",
+     "b959"
+    ],
+    "has_gto_wizard_folded": false,
+    "winnings": null,
+    "aivat_score": null
+   }
+  },
+  {
+   "sent": {
+    "action": "c"
+   },
+   "hand_id": 7201797,
+   "game": {
+    "game_id": 1,
+    "game_name": "HUNL 200BB",
+    "game_format": "HUNL",
+    "starting_stack": 20000.0,
+    "blinds": [
+     100.0,
+     50.0
+    ],
+    "stack_reset_per_hand": true
+   },
+   "game_state": {
+    "street": "river",
+    "common_pot": 2906.0,
+    "total_pot": 4824.0,
+    "board_cards": "6h4c7dTs5c",
+    "is_hand_over": true,
+    "player_to_act": null,
+    "players": [
+     {
+      "name": "GTO Wizard",
+      "stack": 17588.0,
+      "position": "BB",
+      "hole_cards": "AsJc"
+     },
+     {
+      "name": "FreddyyBot",
+      "stack": 17588.0,
+      "position": "SB",
+      "hole_cards": "Ah6c"
+     }
+    ],
+    "legal_actions": [],
+    "raise_range": null,
+    "action_history": [
+     "c",
+     "b350",
+     "c",
+     "_",
+     "b231",
+     "c",
+     "_",
+     "b872",
+     "c",
+     "_",
+     "b959",
+     "c"
+    ],
+    "has_gto_wizard_folded": false,
+    "winnings": 2412.0,
+    "aivat_score": 24.14821
+   }
+  }
+ ],
+ [
+  {
+   "hand_id": 7201819,
+   "game": {
+    "game_id": 1,
+    "game_name": "HUNL 200BB",
+    "game_format": "HUNL",
+    "starting_stack": 20000.0,
+    "blinds": [
+     100.0,
+     50.0
+    ],
+    "stack_reset_per_hand": true
+   },
+   "game_state": {
+    "street": "preflop",
+    "common_pot": 0.0,
+    "total_pot": 375.0,
+    "board_cards": "",
+    "is_hand_over": false,
+    "player_to_act": "user",
+    "players": [
+     {
+      "name": "FreddyyBot",
+      "stack": 19900.0,
+      "position": "BB",
+      "hole_cards": "5d5c"
+     },
+     {
+      "name": "GTO Wizard",
+      "stack": 19725.0,
+      "position": "SB",
+      "hole_cards": null
+     }
+    ],
+    "legal_actions": [
+     "f",
+     "c",
+     "b"
+    ],
+    "raise_range": {
+     "min": 450.0,
+     "max": 20000.0
+    },
+    "action_history": [
+     "b275"
+    ],
+    "has_gto_wizard_folded": false,
+    "winnings": null,
+    "aivat_score": null
+   }
+  },
+  {
+   "sent": {
+    "action": "c"
+   },
+   "hand_id": 7201819,
+   "game": {
+    "game_id": 1,
+    "game_name": "HUNL 200BB",
+    "game_format": "HUNL",
+    "starting_stack": 20000.0,
+    "blinds": [
+     100.0,
+     50.0
+    ],
+    "stack_reset_per_hand": true
+   },
+   "game_state": {
+    "street": "flop",
+    "common_pot": 550.0,
+    "total_pot": 550.0,
+    "board_cards": "Kc4s7s",
+    "is_hand_over": false,
+    "player_to_act": "user",
+    "players": [
+     {
+      "name": "FreddyyBot",
+      "stack": 19725.0,
+      "position": "BB",
+      "hole_cards": "5d5c"
+     },
+     {
+      "name": "GTO Wizard",
+      "stack": 19725.0,
+      "position": "SB",
+      "hole_cards": null
+     }
+    ],
+    "legal_actions": [
+     "k",
+     "b"
+    ],
+    "raise_range": {
+     "min": 100.0,
+     "max": 19725.0
+    },
+    "action_history": [
+     "b275",
+     "c",
+     "_"
+    ],
+    "has_gto_wizard_folded": false,
+    "winnings": null,
+    "aivat_score": null
+   }
+  },
+  {
+   "sent": {
+    "action": "k"
+   },
+   "hand_id": 7201819,
+   "game": {
+    "game_id": 1,
+    "game_name": "HUNL 200BB",
+    "game_format": "HUNL",
+    "starting_stack": 20000.0,
+    "blinds": [
+     100.0,
+     50.0
+    ],
+    "stack_reset_per_hand": true
+   },
+   "game_state": {
+    "street": "turn",
+    "common_pot": 550.0,
+    "total_pot": 550.0,
+    "board_cards": "Kc4s7s2c",
+    "is_hand_over": false,
+    "player_to_act": "user",
+    "players": [
+     {
+      "name": "FreddyyBot",
+      "stack": 19725.0,
+      "position": "BB",
+      "hole_cards": "5d5c"
+     },
+     {
+      "name": "GTO Wizard",
+      "stack": 19725.0,
+      "position": "SB",
+      "hole_cards": null
+     }
+    ],
+    "legal_actions": [
+     "k",
+     "b"
+    ],
+    "raise_range": {
+     "min": 100.0,
+     "max": 19725.0
+    },
+    "action_history": [
+     "b275",
+     "c",
+     "_",
+     "k",
+     "k",
+     "_"
+    ],
+    "has_gto_wizard_folded": false,
+    "winnings": null,
+    "aivat_score": null
+   }
+  },
+  {
+   "sent": {
+    "action": "k"
+   },
+   "hand_id": 7201819,
+   "game": {
+    "game_id": 1,
+    "game_name": "HUNL 200BB",
+    "game_format": "HUNL",
+    "starting_stack": 20000.0,
+    "blinds": [
+     100.0,
+     50.0
+    ],
+    "stack_reset_per_hand": true
+   },
+   "game_state": {
+    "street": "river",
+    "common_pot": 550.0,
+    "total_pot": 550.0,
+    "board_cards": "Kc4s7s2cJh",
+    "is_hand_over": false,
+    "player_to_act": "user",
+    "players": [
+     {
+      "name": "FreddyyBot",
+      "stack": 19725.0,
+      "position": "BB",
+      "hole_cards": "5d5c"
+     },
+     {
+      "name": "GTO Wizard",
+      "stack": 19725.0,
+      "position": "SB",
+      "hole_cards": null
+     }
+    ],
+    "legal_actions": [
+     "k",
+     "b"
+    ],
+    "raise_range": {
+     "min": 100.0,
+     "max": 19725.0
+    },
+    "action_history": [
+     "b275",
+     "c",
+     "_",
+     "k",
+     "k",
+     "_",
+     "k",
+     "k",
+     "_"
+    ],
+    "has_gto_wizard_folded": false,
+    "winnings": null,
+    "aivat_score": null
+   }
+  },
+  {
+   "sent": {
+    "action": "k"
+   },
+   "hand_id": 7201819,
+   "game": {
+    "game_id": 1,
+    "game_name": "HUNL 200BB",
+    "game_format": "HUNL",
+    "starting_stack": 20000.0,
+    "blinds": [
+     100.0,
+     50.0
+    ],
+    "stack_reset_per_hand": true
+   },
+   "game_state": {
+    "street": "river",
+    "common_pot": 550.0,
+    "total_pot": 1100.0,
+    "board_cards": "Kc4s7s2cJh",
+    "is_hand_over": false,
+    "player_to_act": "user",
+    "players": [
+     {
+      "name": "FreddyyBot",
+      "stack": 19725.0,
+      "position": "BB",
+      "hole_cards": "5d5c"
+     },
+     {
+      "name": "GTO Wizard",
+      "stack": 19175.0,
+      "position": "SB",
+      "hole_cards": null
+     }
+    ],
+    "legal_actions": [
+     "f",
+     "c",
+     "b"
+    ],
+    "raise_range": {
+     "min": 1100.0,
+     "max": 19725.0
+    },
+    "action_history": [
+     "b275",
+     "c",
+     "_",
+     "k",
+     "k",
+     "_",
+     "k",
+     "k",
+     "_",
+     "k",
+     "b550"
+    ],
+    "has_gto_wizard_folded": false,
+    "winnings": null,
+    "aivat_score": null
+   }
+  },
+  {
+   "sent": {
+    "action": "c"
+   },
+   "hand_id": 7201819,
+   "game": {
+    "game_id": 1,
+    "game_name": "HUNL 200BB",
+    "game_format": "HUNL",
+    "starting_stack": 20000.0,
+    "blinds": [
+     100.0,
+     50.0
+    ],
+    "stack_reset_per_hand": true
+   },
+   "game_state": {
+    "street": "river",
+    "common_pot": 550.0,
+    "total_pot": 1650.0,
+    "board_cards": "Kc4s7s2cJh",
+    "is_hand_over": true,
+    "player_to_act": null,
+    "players": [
+     {
+      "name": "FreddyyBot",
+      "stack": 19175.0,
+      "position": "BB",
+      "hole_cards": "5d5c"
+     },
+     {
+      "name": "GTO Wizard",
+      "stack": 19175.0,
+      "position": "SB",
+      "hole_cards": "Qs6h"
+     }
+    ],
+    "legal_actions": [],
+    "raise_range": null,
+    "action_history": [
+     "b275",
+     "c",
+     "_",
+     "k",
+     "k",
+     "_",
+     "k",
+     "k",
+     "_",
+     "k",
+     "b550",
+     "c"
+    ],
+    "has_gto_wizard_folded": false,
+    "winnings": 825.0,
+    "aivat_score": -121.79289
+   }
+  }
+ ],
+ [
+  {
+   "hand_id": 7201853,
+   "game": {
+    "game_id": 1,
+    "game_name": "HUNL 200BB",
+    "game_format": "HUNL",
+    "starting_stack": 20000.0,
+    "blinds": [
+     100.0,
+     50.0
+    ],
+    "stack_reset_per_hand": true
+   },
+   "game_state": {
+    "street": "preflop",
+    "common_pot": 0.0,
+    "total_pot": 150.0,
+    "board_cards": "",
+    "is_hand_over": false,
+    "player_to_act": "user",
+    "players": [
+     {
+      "name": "GTO Wizard",
+      "stack": 19900.0,
+      "position": "BB",
+      "hole_cards": null
+     },
+     {
+      "name": "FreddyyBot",
+      "stack": 19950.0,
+      "position": "SB",
+      "hole_cards": "8h7s"
+     }
+    ],
+    "legal_actions": [
+     "f",
+     "c",
+     "b"
+    ],
+    "raise_range": {
+     "min": 200.0,
+     "max": 20000.0
+    },
+    "action_history": [],
+    "has_gto_wizard_folded": false,
+    "winnings": null,
+    "aivat_score": null
+   }
+  },
+  {
+   "sent": {
+    "action": "c"
+   },
+   "hand_id": 7201853,
+   "game": {
+    "game_id": 1,
+    "game_name": "HUNL 200BB",
+    "game_format": "HUNL",
+    "starting_stack": 20000.0,
+    "blinds": [
+     100.0,
+     50.0
+    ],
+    "stack_reset_per_hand": true
+   },
+   "game_state": {
+    "street": "preflop",
+    "common_pot": 0.0,
+    "total_pot": 450.0,
+    "board_cards": "",
+    "is_hand_over": false,
+    "player_to_act": "user",
+    "players": [
+     {
+      "name": "GTO Wizard",
+      "stack": 19650.0,
+      "position": "BB",
+      "hole_cards": null
+     },
+     {
+      "name": "FreddyyBot",
+      "stack": 19900.0,
+      "position": "SB",
+      "hole_cards": "8h7s"
+     }
+    ],
+    "legal_actions": [
+     "f",
+     "c",
+     "b"
+    ],
+    "raise_range": {
+     "min": 600.0,
+     "max": 20000.0
+    },
+    "action_history": [
+     "c",
+     "b350"
+    ],
+    "has_gto_wizard_folded": false,
+    "winnings": null,
+    "aivat_score": null
+   }
+  },
+  {
+   "sent": {
+    "action": "c"
+   },
+   "hand_id": 7201853,
+   "game": {
+    "game_id": 1,
+    "game_name": "HUNL 200BB",
+    "game_format": "HUNL",
+    "starting_stack": 20000.0,
+    "blinds": [
+     100.0,
+     50.0
+    ],
+    "stack_reset_per_hand": true
+   },
+   "game_state": {
+    "street": "flop",
+    "common_pot": 700.0,
+    "total_pot": 1225.0,
+    "board_cards": "9c7d3h",
+    "is_hand_over": false,
+    "player_to_act": "user",
+    "players": [
+     {
+      "name": "GTO Wizard",
+      "stack": 19125.0,
+      "position": "BB",
+      "hole_cards": null
+     },
+     {
+      "name": "FreddyyBot",
+      "stack": 19650.0,
+      "position": "SB",
+      "hole_cards": "8h7s"
+     }
+    ],
+    "legal_actions": [
+     "f",
+     "c",
+     "b"
+    ],
+    "raise_range": {
+     "min": 1050.0,
+     "max": 19650.0
+    },
+    "action_history": [
+     "c",
+     "b350",
+     "c",
+     "_",
+     "b525"
+    ],
+    "has_gto_wizard_folded": false,
+    "winnings": null,
+    "aivat_score": null
+   }
+  },
+  {
+   "sent": {
+    "action": "c"
+   },
+   "hand_id": 7201853,
+   "game": {
+    "game_id": 1,
+    "game_name": "HUNL 200BB",
+    "game_format": "HUNL",
+    "starting_stack": 20000.0,
+    "blinds": [
+     100.0,
+     50.0
+    ],
+    "stack_reset_per_hand": true
+   },
+   "game_state": {
+    "street": "turn",
+    "common_pot": 1750.0,
+    "total_pot": 3358.0,
+    "board_cards": "9c7d3h4h",
+    "is_hand_over": false,
+    "player_to_act": "user",
+    "players": [
+     {
+      "name": "GTO Wizard",
+      "stack": 17517.0,
+      "position": "BB",
+      "hole_cards": null
+     },
+     {
+      "name": "FreddyyBot",
+      "stack": 19125.0,
+      "position": "SB",
+      "hole_cards": "8h7s"
+     }
+    ],
+    "legal_actions": [
+     "f",
+     "c",
+     "b"
+    ],
+    "raise_range": {
+     "min": 3216.0,
+     "max": 19125.0
+    },
+    "action_history": [
+     "c",
+     "b350",
+     "c",
+     "_",
+     "b525",
+     "c",
+     "_",
+     "b1608"
+    ],
+    "has_gto_wizard_folded": false,
+    "winnings": null,
+    "aivat_score": null
+   }
+  },
+  {
+   "sent": {
+    "action": "c"
+   },
+   "hand_id": 7201853,
+   "game": {
+    "game_id": 1,
+    "game_name": "HUNL 200BB",
+    "game_format": "HUNL",
+    "starting_stack": 20000.0,
+    "blinds": [
+     100.0,
+     50.0
+    ],
+    "stack_reset_per_hand": true
+   },
+   "game_state": {
+    "street": "river",
+    "common_pot": 4966.0,
+    "total_pot": 12415.0,
+    "board_cards": "9c7d3h4h3s",
+    "is_hand_over": false,
+    "player_to_act": "user",
+    "players": [
+     {
+      "name": "GTO Wizard",
+      "stack": 10068.0,
+      "position": "BB",
+      "hole_cards": null
+     },
+     {
+      "name": "FreddyyBot",
+      "stack": 17517.0,
+      "position": "SB",
+      "hole_cards": "8h7s"
+     }
+    ],
+    "legal_actions": [
+     "f",
+     "c",
+     "b"
+    ],
+    "raise_range": {
+     "min": 14898.0,
+     "max": 17517.0
+    },
+    "action_history": [
+     "c",
+     "b350",
+     "c",
+     "_",
+     "b525",
+     "c",
+     "_",
+     "b1608",
+     "c",
+     "_",
+     "b7449"
+    ],
+    "has_gto_wizard_folded": false,
+    "winnings": null,
+    "aivat_score": null
+   }
+  },
+  {
+   "sent": {
+    "action": "c"
+   },
+   "hand_id": 7201853,
+   "game": {
+    "game_id": 1,
+    "game_name": "HUNL 200BB",
+    "game_format": "HUNL",
+    "starting_stack": 20000.0,
+    "blinds": [
+     100.0,
+     50.0
+    ],
+    "stack_reset_per_hand": true
+   },
+   "game_state": {
+    "street": "river",
+    "common_pot": 4966.0,
+    "total_pot": 19864.0,
+    "board_cards": "9c7d3h4h3s",
+    "is_hand_over": true,
+    "player_to_act": null,
+    "players": [
+     {
+      "name": "GTO Wizard",
+      "stack": 10068.0,
+      "position": "BB",
+      "hole_cards": "JdJc"
+     },
+     {
+      "name": "FreddyyBot",
+      "stack": 10068.0,
+      "position": "SB",
+      "hole_cards": "8h7s"
+     }
+    ],
+    "legal_actions": [],
+    "raise_range": null,
+    "action_history": [
+     "c",
+     "b350",
+     "c",
+     "_",
+     "b525",
+     "c",
+     "_",
+     "b1608",
+     "c",
+     "_",
+     "b7449",
+     "c"
+    ],
+    "has_gto_wizard_folded": false,
+    "winnings": -9932.0,
+    "aivat_score": -202.01487
+   }
+  }
+ ],
+ [
+  {
+   "hand_id": 7201884,
+   "game": {
+    "game_id": 1,
+    "game_name": "HUNL 200BB",
+    "game_format": "HUNL",
+    "starting_stack": 20000.0,
+    "blinds": [
+     100.0,
+     50.0
+    ],
+    "stack_reset_per_hand": true
+   },
+   "game_state": {
+    "street": "preflop",
+    "common_pot": 0.0,
+    "total_pot": 325.0,
+    "board_cards": "",
+    "is_hand_over": false,
+    "player_to_act": "user",
+    "players": [
+     {
+      "name": "FreddyyBot",
+      "stack": 19900.0,
+      "position": "BB",
+      "hole_cards": "5s2h"
+     },
+     {
+      "name": "GTO Wizard",
+      "stack": 19775.0,
+      "position": "SB",
+      "hole_cards": null
+     }
+    ],
+    "legal_actions": [
+     "f",
+     "c",
+     "b"
+    ],
+    "raise_range": {
+     "min": 350.0,
+     "max": 20000.0
+    },
+    "action_history": [
+     "b225"
+    ],
+    "has_gto_wizard_folded": false,
+    "winnings": null,
+    "aivat_score": null
+   }
+  },
+  {
+   "sent": {
+    "action": "c"
+   },
+   "hand_id": 7201884,
+   "game": {
+    "game_id": 1,
+    "game_name": "HUNL 200BB",
+    "game_format": "HUNL",
+    "starting_stack": 20000.0,
+    "blinds": [
+     100.0,
+     50.0
+    ],
+    "stack_reset_per_hand": true
+   },
+   "game_state": {
+    "street": "flop",
+    "common_pot": 450.0,
+    "total_pot": 450.0,
+    "board_cards": "3cAhQs",
+    "is_hand_over": false,
+    "player_to_act": "user",
+    "players": [
+     {
+      "name": "FreddyyBot",
+      "stack": 19775.0,
+      "position": "BB",
+      "hole_cards": "5s2h"
+     },
+     {
+      "name": "GTO Wizard",
+      "stack": 19775.0,
+      "position": "SB",
+      "hole_cards": null
+     }
+    ],
+    "legal_actions": [
+     "k",
+     "b"
+    ],
+    "raise_range": {
+     "min": 100.0,
+     "max": 19775.0
+    },
+    "action_history": [
+     "b225",
+     "c",
+     "_"
+    ],
+    "has_gto_wizard_folded": false,
+    "winnings": null,
+    "aivat_score": null
+   }
+  },
+  {
+   "sent": {
+    "action": "k"
+   },
+   "hand_id": 7201884,
+   "game": {
+    "game_id": 1,
+    "game_name": "HUNL 200BB",
+    "game_format": "HUNL",
+    "starting_stack": 20000.0,
+    "blinds": [
+     100.0,
+     50.0
+    ],
+    "stack_reset_per_hand": true
+   },
+   "game_state": {
+    "street": "turn",
+    "common_pot": 450.0,
+    "total_pot": 450.0,
+    "board_cards": "3cAhQs3s",
+    "is_hand_over": false,
+    "player_to_act": "user",
+    "players": [
+     {
+      "name": "FreddyyBot",
+      "stack": 19775.0,
+      "position": "BB",
+      "hole_cards": "5s2h"
+     },
+     {
+      "name": "GTO Wizard",
+      "stack": 19775.0,
+      "position": "SB",
+      "hole_cards": null
+     }
+    ],
+    "legal_actions": [
+     "k",
+     "b"
+    ],
+    "raise_range": {
+     "min": 100.0,
+     "max": 19775.0
+    },
+    "action_history": [
+     "b225",
+     "c",
+     "_",
+     "k",
+     "k",
+     "_"
+    ],
+    "has_gto_wizard_folded": false,
+    "winnings": null,
+    "aivat_score": null
+   }
+  },
+  {
+   "sent": {
+    "action": "k"
+   },
+   "hand_id": 7201884,
+   "game": {
+    "game_id": 1,
+    "game_name": "HUNL 200BB",
+    "game_format": "HUNL",
+    "starting_stack": 20000.0,
+    "blinds": [
+     100.0,
+     50.0
+    ],
+    "stack_reset_per_hand": true
+   },
+   "game_state": {
+    "street": "turn",
+    "common_pot": 450.0,
+    "total_pot": 599.0,
+    "board_cards": "3cAhQs3s",
+    "is_hand_over": false,
+    "player_to_act": "user",
+    "players": [
+     {
+      "name": "FreddyyBot",
+      "stack": 19775.0,
+      "position": "BB",
+      "hole_cards": "5s2h"
+     },
+     {
+      "name": "GTO Wizard",
+      "stack": 19626.0,
+      "position": "SB",
+      "hole_cards": null
+     }
+    ],
+    "legal_actions": [
+     "f",
+     "c",
+     "b"
+    ],
+    "raise_range": {
+     "min": 298.0,
+     "max": 19775.0
+    },
+    "action_history": [
+     "b225",
+     "c",
+     "_",
+     "k",
+     "k",
+     "_",
+     "k",
+     "b149"
+    ],
+    "has_gto_wizard_folded": false,
+    "winnings": null,
+    "aivat_score": null
+   }
+  },
+  {
+   "sent": {
+    "action": "c"
+   },
+   "hand_id": 7201884,
+   "game": {
+    "game_id": 1,
+    "game_name": "HUNL 200BB",
+    "game_format": "HUNL",
+    "starting_stack": 20000.0,
+    "blinds": [
+     100.0,
+     50.0
+    ],
+    "stack_reset_per_hand": true
+   },
+   "game_state": {
+    "street": "river",
+    "common_pot": 748.0,
+    "total_pot": 748.0,
+    "board_cards": "3cAhQs3s8c",
+    "is_hand_over": false,
+    "player_to_act": "user",
+    "players": [
+     {
+      "name": "FreddyyBot",
+      "stack": 19626.0,
+      "position": "BB",
+      "hole_cards": "5s2h"
+     },
+     {
+      "name": "GTO Wizard",
+      "stack": 19626.0,
+      "position": "SB",
+      "hole_cards": null
+     }
+    ],
+    "legal_actions": [
+     "k",
+     "b"
+    ],
+    "raise_range": {
+     "min": 100.0,
+     "max": 19626.0
+    },
+    "action_history": [
+     "b225",
+     "c",
+     "_",
+     "k",
+     "k",
+     "_",
+     "k",
+     "b149",
+     "c",
+     "_"
+    ],
+    "has_gto_wizard_folded": false,
+    "winnings": null,
+    "aivat_score": null
+   }
+  },
+  {
+   "sent": {
+    "action": "k"
+   },
+   "hand_id": 7201884,
+   "game": {
+    "game_id": 1,
+    "game_name": "HUNL 200BB",
+    "game_format": "HUNL",
+    "starting_stack": 20000.0,
+    "blinds": [
+     100.0,
+     50.0
+    ],
+    "stack_reset_per_hand": true
+   },
+   "game_state": {
+    "street": "river",
+    "common_pot": 748.0,
+    "total_pot": 1496.0,
+    "board_cards": "3cAhQs3s8c",
+    "is_hand_over": false,
+    "player_to_act": "user",
+    "players": [
+     {
+      "name": "FreddyyBot",
+      "stack": 19626.0,
+      "position": "BB",
+      "hole_cards": "5s2h"
+     },
+     {
+      "name": "GTO Wizard",
+      "stack": 18878.0,
+      "position": "SB",
+      "hole_cards": null
+     }
+    ],
+    "legal_actions": [
+     "f",
+     "c",
+     "b"
+    ],
+    "raise_range": {
+     "min": 1496.0,
+     "max": 19626.0
+    },
+    "action_history": [
+     "b225",
+     "c",
+     "_",
+     "k",
+     "k",
+     "_",
+     "k",
+     "b149",
+     "c",
+     "_",
+     "k",
+     "b748"
+    ],
+    "has_gto_wizard_folded": false,
+    "winnings": null,
+    "aivat_score": null
+   }
+  },
+  {
+   "sent": {
+    "action": "c"
+   },
+   "hand_id": 7201884,
+   "game": {
+    "game_id": 1,
+    "game_name": "HUNL 200BB",
+    "game_format": "HUNL",
+    "starting_stack": 20000.0,
+    "blinds": [
+     100.0,
+     50.0
+    ],
+    "stack_reset_per_hand": true
+   },
+   "game_state": {
+    "street": "river",
+    "common_pot": 748.0,
+    "total_pot": 2244.0,
+    "board_cards": "3cAhQs3s8c",
+    "is_hand_over": true,
+    "player_to_act": null,
+    "players": [
+     {
+      "name": "FreddyyBot",
+      "stack": 18878.0,
+      "position": "BB",
+      "hole_cards": "5s2h"
+     },
+     {
+      "name": "GTO Wizard",
+      "stack": 18878.0,
+      "position": "SB",
+      "hole_cards": "Ad7h"
+     }
+    ],
+    "legal_actions": [],
+    "raise_range": null,
+    "action_history": [
+     "b225",
+     "c",
+     "_",
+     "k",
+     "k",
+     "_",
+     "k",
+     "b149",
+     "c",
+     "_",
+     "k",
+     "b748",
+     "c"
+    ],
+    "has_gto_wizard_folded": false,
+    "winnings": -1122.0,
+    "aivat_score": -721.34506
+   }
+  }
+ ]
+]

@@ -193,6 +193,13 @@ def verify_events(events) -> dict:
         return report
     report["hands"] = sum(1 for e in events if e["type"] == "hand_start")
     report["decisions"] = sum(1 for e in events if e["type"] == "decision")
+    if events[0].get("dealer") == "gto_wizard":
+        # GTO Wizard dealt these hands on its server, so there is no seed to replay
+        report["warnings"].append("dealt by GTO Wizard: the cards can't be replayed, "
+                                  "only the chip accounting is checked")
+        report["problems"].extend(_check_accounting(events))
+        report["ok"] = not report["problems"]
+        return report
     if events[0].get("engine_hash") != engine_hash():
         report["warnings"].append("engine/game.py has changed since this match was played; "
                                   "a replay mismatch may come from that change")

@@ -1,0 +1,164 @@
+"""Tests for matches against GTO Wizard (arena/gtow.py), against recorded API
+responses: no network, and none of the monthly hand quota."""
+import json
+import os
+import sys
+from pathlib import Path
+
+import pytest
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
+from arena import gtow
+from arena.events import read_events
+from arena.seats import Seat
+from arena.verify import verify_match_dir
+
+# Five real hands, played by always checking or calling. Each is the list of
+# responses: POST /hands, then one POST /act per action (with "sent": what we sent).
+HANDS = json.loads((Path(__file__).parent / "fixtures" / "gtow_hands.json").read_text())
+
+
+class FakeClient:
+    """Replays recorded hands, checking that we send what was sent then."""
+
+    def __init__(self, hands=HANDS):
+        self.hands = list(hands)
+        self.current = None
+        self.sent = []
+
+    def new_hand(self):
+        self.current = list(self.hands.pop(0))
+        return self.current.pop(0)
+
+    def act(self, hand_id, action, amount=None):
+        resp = self.current.pop(0)
+        assert resp["hand_id"] == hand_id
+        body = {"action": action} if amount is None else {"action": action, "amount": amount}
+        assert body == resp["sent"], f"sent {body}, the recording sent {resp['sent']}"
+        self.sent.append(body)
+        return resp
+
+
+class Caller(Seat):
+    """Checks or calls everything, like the recording; remembers what it saw."""
+
+    kind = "bot"
+
+    def __init__(self, name="caller"):
+        super().__init__(name)
+        self.seen = []
+
+    def request_action(self, state):
+        self.seen.append(state)
+        return {"action": "call", "think_ms": 1.0, "logs": "", "debug": {"n": len(self.seen)}}
+
+
+def play(tmp_path, seat=None, hands=len(HANDS)):
+    seat = seat or Caller()
+    summary = gtow.run_gtow_match(seat, hands, match_id="g", runs_dir=tmp_path, client=FakeClient())
+    return seat, summary, read_events(Path(summary["run_dir"]))
+
+
+def of_type(events, t):
+    return [e for e in events if e["type"] == t]
+
+
+def test_match_follows_the_recording_and_verifies(tmp_path):
+    seat, summary, events = play(tmp_path)
+    assert summary["hands"] == 5 and summary["stopped"] == "hand_limit"
+    ends = of_type(events, "hand_end")
+    winnings = [h[-1]["game_state"]["winnings"] for h in HANDS]
+    assert [e["deltas"]["caller"] for e in ends] == winnings
+    assert all(e["deltas"]["gto_wizard"] == -e["deltas"]["caller"] for e in ends)
+    assert [e["aivat"]["caller"] for e in ends] == [h[-1]["game_state"]["aivat_score"] for h in HANDS]
+    result = {r["bot"]: r for r in summary["results"]}
+    assert result["caller"]["delta"] == sum(winnings)
+    assert result["caller"]["bb_per_100"] == round(sum(winnings) / 100 * 100 / 5, 2)
+    assert summary["aivat"]["caller"]["hands"] == 5
+
+    report = verify_match_dir(Path(summary["run_dir"]))
+    assert report["ok"], report["problems"]
+    assert any("GTO Wizard" in w for w in report["warnings"])
+
+
+def test_gto_wizard_folding_preflop(tmp_path):
+    _, _, events = play(tmp_path, hands=1)
+    start = of_type(events, "hand_start")[0]
+    assert start["sb"] == 1 and start["bb"] == 0          # GTO Wizard posted the small blind
+    assert start["hole"] == {"caller": ["Ac", "Ts"]}       # its cards are unknown until the end
+    (fold,) = of_type(events, "decision")
+    assert fold["bot"] == "gto_wizard" and fold["applied"]["action"] == "fold"
+    assert of_type(events, "award") == [{"type": "award", "hand": 0, "bot": "caller",
+                                         "amount": 150, "pot": "main"}]
+    end = of_type(events, "hand_end")[0]
+    assert end["gtow_hole"] == ["Td", "2h"] and end["deltas"] == {"caller": 50, "gto_wizard": -50}
+    assert not of_type(events, "showdown")
+
+
+def test_bot_sees_the_engine_state_format(tmp_path):
+    seat, _, events = play(tmp_path, hands=2)
+    # hand 2 (index 1), flop: GTO Wizard (BB) bets 231 into 700 after we limped and called 350
+    s = next(x for x in seat.seen if x["hand_num"] == 1 and x["street"] == "flop")
+    assert s["your_cards"] == ["Ah", "6c"] and s["community_cards"] == ["6h", "4c", "7d"]
+    assert (s["pot"], s["amount_owed"], s["current_bet"], s["min_raise_to"]) == (931, 231, 231, 462)
+    assert (s["your_stack"], s["can_check"], s["seat_to_act"], s["button_seat"]) == (19650, False, 0, 0)
+    assert s["legal_actions"] == ["f", "c", "b"]
+    assert [a["action"] for a in s["action_log"]] == \
+        ["small_blind", "big_blind", "call", "raise", "call", "raise"]
+    assert [p["bot_id"] for p in s["players"]] == ["caller", "gto_wizard"]
+    # match_action_log carries the previous hand too
+    assert s["match_action_log"][0]["hand_num"] == 0
+    # every hand_start is followed by both blinds, and the logged pot matches the API
+    assert len(of_type(events, "post")) == 4
+    show = of_type(events, "showdown")[0]
+    assert show["reveal"] == {"caller": ["Ah", "6c"], "gto_wizard": ["As", "Jc"]}
+    assert show["ranks"]["caller"] == "Pair"
+    assert [d["board"] for d in of_type(events, "deal")] == \
+        [["6h", "4c", "7d"], ["6h", "4c", "7d", "Ts"], ["6h", "4c", "7d", "Ts", "5c"]]
+
+
+def test_gto_wizard_decisions_are_logged_with_what_it_saw(tmp_path):
+    _, _, events = play(tmp_path, hands=3)
+    # hand 3: GTO Wizard opens to 275 from the small blind before we ever act
+    first = [e for e in of_type(events, "decision") if e["hand"] == 2][0]
+    assert first["bot"] == "gto_wizard" and first["applied"]["action"] == "raise"
+    assert first["applied"]["amount"] == 275 and first["applied"]["pot_after"] == 375
+    assert first["state"]["your_cards"] == [] and first["state"]["amount_owed"] == 50
+    assert first["think_ms"] is None
+    ours = [e for e in of_type(events, "decision") if e["bot"] == "caller"]
+    assert ours[0]["reply"] == {"action": "call"} and ours[0]["debug"] == {"n": 1}
+
+
+@pytest.mark.parametrize("reply, owed, legal, expected", [
+    ({"action": "fold"}, 0, ["k", "b"], ("k", None)),        # GTO Wizard won't take a free fold
+    ({"action": "fold"}, 100, ["f", "c", "b"], ("f", None)),
+    ({"action": "check"}, 100, ["f", "c", "b"], ("c", None)),
+    ({"action": "call"}, 0, ["k", "b"], ("k", None)),
+    ({"action": "raise", "amount": 10}, 0, ["k", "b"], ("b", 100)),      # snapped up to the min
+    ({"action": "raise", "amount": 99999}, 0, ["k", "b"], ("b", 19725)),  # capped at the stack
+    ({"action": "raise", "amount": "lots"}, 0, ["k", "b"], ("b", 100)),
+    ({"action": "all_in"}, 0, ["k", "b"], ("b", 19725)),
+    ({"action": "all_in"}, 500, ["f", "c"], ("c", None)),     # can't raise: call instead
+    ({"action": "dance"}, 100, ["f", "c", "b"], ("f", None)),
+    ({}, 0, ["k", "b"], ("k", None)),
+])
+def test_replies_become_api_actions(reply, owed, legal, expected):
+    rr = {"min": 100, "max": 19725} if "b" in legal else None
+    assert gtow.to_api_action(reply, {"amount_owed": owed}, legal, rr) == expected
+
+
+def test_a_changed_game_is_refused():
+    resp = json.loads(json.dumps(HANDS[0][0]))
+    resp["game"]["starting_stack"] = 10000.0
+    with pytest.raises(gtow.GTOWizardError, match="game changed"):
+        gtow.check_game(resp)
+    gtow.check_game(HANDS[0][0])
+
+
+def test_tracker_all_in_and_runout(tmp_path):
+    t = gtow.HandTracker({"a": 0, "b": 1}, sb="a", bb="b", stack=20000,
+                         blinds={"sb": 50, "bb": 100, "ante": 0})
+    assert t.apply("b20000")["action"] == "all_in"
+    call = t.apply("c")
+    assert call == {"bot": "b", "action": "call", "amount": 19900, "pot_after": 40000, "stack_after": 0}
