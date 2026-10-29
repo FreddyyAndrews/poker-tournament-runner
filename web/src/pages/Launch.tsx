@@ -162,12 +162,19 @@ export function Launch() {
     const legs = (format === 'round_robin' && duplicate) || (format === 'table' && n === 2 && duplicate) ? 2 : 1
     const freeze = (players: number) => Math.min(hands, 60 + 40 * players)
     const perMatch = mode === 'freezeout' ? freeze(format === 'table' ? n : format === 'mtt' ? Math.min(n, tableSize) : 2) : hands
-    const matches = format === 'table' ? legs : format === 'bracket' ? n - 1
-      : format === 'round_robin' ? (n * (n - 1) / 2) * legs : 1
-    const totalHands = format === 'mtt' ? freeze(n) : perMatch * matches
+    // Matches play `workers` at a time: a round robin all together, a bracket round by round.
+    const w = Math.max(1, workers)
+    let waves = legs
+    if (format === 'round_robin') waves = Math.ceil((n * (n - 1) / 2) * legs / w)
+    if (format === 'bracket') {
+      const size = 2 ** Math.ceil(Math.log2(n))
+      waves = Math.ceil((n - size / 2) / w)                     // round 1 (the rest have byes)
+      for (let m = size / 4; m >= 1; m /= 2) waves += Math.ceil(m / w)
+    }
+    const totalHands = format === 'mtt' ? freeze(n) : perMatch * waves
     const minutes = (totalHands * 7 * pace) / 60000
     return minutes < 2 ? 'about a minute' : minutes < 90 ? `roughly ${Math.round(minutes)} minutes` : `roughly ${(minutes / 60).toFixed(1)} hours`
-  }, [entrants, series, pace, format, duplicate, mode, hands, tableSize, vsExt, g])
+  }, [entrants, series, pace, format, duplicate, mode, hands, tableSize, vsExt, g, workers])
 
   async function launch() {
     if (problem) return
@@ -194,7 +201,7 @@ export function Launch() {
         location.hash = me ? seatHash(r.match_key, me.token, me.name) : `#/match/${r.match_key}`
       } else {
         const r = await post('/api/runs', {
-          ...common, format, name: name.trim() || undefined, runs, workers: series ? workers : (pace ? 1 : workers),
+          ...common, format, name: name.trim() || undefined, runs, workers,
           table_size: format === 'mtt' ? tableSize : undefined,
           duplicate: format === 'round_robin' || format === 'table' ? duplicate : undefined,
           seeding: format === 'bracket' ? seeding : undefined,
@@ -370,7 +377,9 @@ export function Launch() {
                   <option value="series">Many times (a series)</option>
                 </select></label>
               {series && <label>Runs<input type="number" min={2} value={runs} onChange={e => setRuns(Math.max(2, Number(e.target.value)))} data-testid="runs" /></label>}
-              {series && <label>In parallel<input type="number" min={1} max={32} value={workers} onChange={e => setWorkers(Number(e.target.value))} /></label>}
+              {(series || (format !== 'table' && format !== 'mtt')) && <label>{series ? 'Runs in parallel' : 'Matches in parallel'}
+                <input type="number" min={1} max={32} value={workers} onChange={e => setWorkers(Math.max(1, Number(e.target.value)))}
+                       data-testid="workers" /></label>}
             </div>
             {!series && (
               <div className="seg" role="group" style={{ marginTop: 10 }}>
@@ -381,7 +390,9 @@ export function Launch() {
               </div>
             )}
             <p className="hint">{series ? 'A series always runs at full speed; any single match can be replayed afterwards.'
-              : PACES.find(p => p.ms === pace)?.blurb}</p>
+              : PACES.find(p => p.ms === pace)?.blurb}
+              {!series && format !== 'table' && format !== 'mtt' && workers > 1 &&
+                ` Up to ${workers} matches play at once${pace ? ', each at this pace; follow any of them from Now playing on the run page' : ''}.`}</p>
           </section>
 
           <details className="section">
