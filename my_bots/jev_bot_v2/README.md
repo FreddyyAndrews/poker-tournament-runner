@@ -11,9 +11,9 @@ ignored, and if the distribution is missing the bot falls back to Jev's own choi
 Each decision's `debug` adds `jev_choice` (what v1 would have played) and `sampled` (what v2 played), plus
 `jev_size_choice` on raises, so the two can be compared in the decision inspector.
 
-Config, network requirements and fallbacks are the same as v1.
+The request, including the compact hand summary, config, network requirements and fallbacks, is the same as v1.
 
-## First smoke run (jev-1.13.0, local, 50/100 cash)
+## First smoke run (jev-1.13.0, local, 50/100 cash, raw game state)
 
 ```bash
 poker match my_bots/jev_bot_v2 shark --cash --hands 30 --local --seed 1 --id jev_v2_smoke
