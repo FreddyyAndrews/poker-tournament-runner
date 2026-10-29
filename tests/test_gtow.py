@@ -287,3 +287,15 @@ def test_cli_refuses_flags_that_change_the_game(capsys):
     with pytest.raises(SystemExit):
         cli.main(["match", "shark", "aggressor", "--workers", "3", "--local"])
     assert "only applies to matches against gto_wizard" in capsys.readouterr().err
+
+
+def test_api_says_whether_gto_wizard_is_configured(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+    from arena.server import create_app
+    monkeypatch.setattr(gtow, "REPO_ENV", Path("/nonexistent/.env"))
+    monkeypatch.delenv("GTO_WIZARD_API_KEY", raising=False)
+    with TestClient(create_app(tmp_path)) as c:
+        assert c.get("/api/gto_wizard").json()["configured"] is False
+        monkeypatch.setenv("GTO_WIZARD_API_KEY", "k")
+        info = c.get("/api/gto_wizard").json()
+    assert info["configured"] is True and (info["starting_stack"], info["bb"]) == (20000, 100)

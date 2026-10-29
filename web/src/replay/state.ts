@@ -19,6 +19,7 @@ export type PlayerState = {
   rank: string | null       // hand name at showdown
   shown: boolean            // cards revealed at showdown
   net: number               // chips won over the match so far (sum of hand deltas); the score in cash games
+  aivat: number | null      // against GTO Wizard: luck-adjusted chips won so far (sum of hand AIVAT scores)
 }
 
 export type TableState = {
@@ -80,7 +81,7 @@ export function apply(s: TableState, e: PokerEvent): TableState {
         players[seat.name] = {
           name: seat.name, seat: seat.seat ?? i, stack: e.config.starting_stack, bet: 0,
           cards: null, inHand: false, folded: false, allIn: false, busted: false, place: null,
-          lastAction: null, won: 0, rank: null, shown: false, net: 0,
+          lastAction: null, won: 0, rank: null, shown: false, net: 0, aivat: null,
         }
       })
       const seatCount = e.table_size ?? Math.max(2, ...Object.values(players).map(p => p.seat + 1))
@@ -154,8 +155,12 @@ export function apply(s: TableState, e: PokerEvent): TableState {
       return { ...s, players, pot: Math.max(0, s.pot + swept - e.amount), acting: null }
     }
     case 'hand_end': {
-      const players = mapPlayers(s, p => e.stacks[p.name] !== undefined
-        ? { ...p, stack: e.stacks[p.name], bet: 0, net: p.net + (e.deltas[p.name] ?? 0) } : p)
+      const players = mapPlayers(s, p => e.stacks[p.name] === undefined ? p : {
+        ...p, stack: e.stacks[p.name], bet: 0, net: p.net + (e.deltas[p.name] ?? 0),
+        aivat: e.aivat?.[p.name] !== undefined ? (p.aivat ?? 0) + e.aivat[p.name] : p.aivat,
+        // GTO Wizard's cards are only known once the hand is over
+        cards: p.cards ?? (p.name === 'gto_wizard' && e.gtow_hole?.length ? e.gtow_hole : null),
+      })
       return { ...s, players, pot: 0, acting: null, handOver: true }
     }
     case 'elimination':
@@ -165,6 +170,7 @@ export function apply(s: TableState, e: PokerEvent): TableState {
         const p: PlayerState = s.players[e.bot] ?? {
           name: e.bot, seat: e.seat, stack: e.stack, bet: 0, cards: null, inHand: false, folded: false,
           allIn: false, busted: false, place: null, lastAction: null, won: 0, rank: null, shown: false, net: 0,
+          aivat: null,
         }
         return { ...s, players: { ...s.players, [e.bot]: { ...p, seat: e.seat, stack: e.stack, busted: false,
                                                              lastAction: 'Joined' } } }

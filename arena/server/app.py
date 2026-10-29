@@ -160,6 +160,18 @@ def create_app(runs_dir: Path = DEFAULT_RUNS_DIR, port: int = 8765) -> FastAPI:
                         "hash": botlib.bot_hash(bot_path)})
         return out
 
+    @app.get("/api/gto_wizard")
+    def gto_wizard():
+        """Whether GTO Wizard can be played here (an API key is set), and its game."""
+        from arena import gtow
+        try:
+            gtow.api_key()
+            configured = True
+        except gtow.GTOWizardError:
+            configured = False
+        return {"configured": configured, "name": gtow.NAME, "starting_stack": gtow.STARTING_STACK,
+                "sb": gtow.SB, "bb": gtow.BB, "max_workers": gtow.MAX_WORKERS}
+
     @app.get("/api/structures")
     def list_structures(stack: int = 10_000):
         return {"presets": {name: structures.preset(name, stack).to_dict()

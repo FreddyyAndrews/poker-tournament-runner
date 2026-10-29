@@ -8,11 +8,18 @@ export function Standings({ state, colorOf }: { state: TableState; colorOf: (n: 
   // Cash games reset stacks every hand, so the score is the running net, not the stack.
   const cash = state.start?.config.mode === 'cash'
   const score = (p: (typeof state.players)[string]) => cash ? p.net : p.stack
+  // Against GTO Wizard: AIVAT (luck-adjusted) bb/100, which says far more than net chips
+  const bb = state.blinds?.bb ?? state.start?.config.structure.levels[0]?.bb ?? 100
+  const aivat = Object.values(state.players).some(p => p.aivat !== null)
+  const handsDone = (state.hand ?? -1) + (state.handOver ? 1 : 0)
+  const perHundred = (v: number | null) => v === null || !handsDone ? '' :
+    ((v / bb) * 100 / handsDone > 0 ? '+' : '') + ((v / bb) * 100 / handsDone).toFixed(1)
   const rows = Object.values(state.players).sort((a, b) =>
     (a.busted ? 1 : 0) - (b.busted ? 1 : 0) || score(b) - score(a) || (a.place ?? 99) - (b.place ?? 99))
   return (
     <table className="standings num" data-testid="standings">
-      {cash && <thead><tr><th /><th className="r">Stack</th><th className="r">Net</th></tr></thead>}
+      {cash && <thead><tr><th /><th className="r">Stack</th><th className="r">Net</th>
+        {aivat && <th className="r" title="Luck-adjusted bb/100 (GTO Wizard's AIVAT score)">AIVAT bb/100</th>}</tr></thead>}
       <tbody>
         {rows.map(p => {
           const delta = cash ? p.net : p.stack - start
@@ -21,6 +28,7 @@ export function Standings({ state, colorOf }: { state: TableState; colorOf: (n: 
               <td><span className="who"><span className="swatch" style={{ background: colorOf(p.name) }} />{p.name}</span></td>
               <td className="r">{p.busted && p.place ? `out, ${ord(p.place)}` : fmt(p.stack)}</td>
               <td className="r" style={{ color: 'var(--text-2)' }}>{cash && delta === 0 ? '\u00b10' : (delta > 0 ? '+' : '') + fmt(delta)}</td>
+              {aivat && <td className="r" data-testid={`aivat-${p.name}`}>{perHundred(p.aivat)}</td>}
             </tr>
           )
         })}
