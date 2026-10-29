@@ -151,6 +151,10 @@ class JobManager:
         names = p.get("names") or []
         name = names[idx] if idx < len(names) else None
         spec = botlib.resolve_all([hero], names=[name], allow_remote=True)[0]
+        try:
+            external.check_budget(opponent, spec.name, p.get("hands") or 100)
+        except external.ExternalError as e:
+            raise ValueError(str(e)) from None
         match_id = p.get("id") or _stamp({"gto_wizard": "gtow"}.get(opponent.name, opponent.name), None)
         self._check_new(match_id)
         job = Job(id=match_id, kind="match", params=p, live=[match_id])

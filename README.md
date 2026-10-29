@@ -124,6 +124,8 @@ poker bench my_bots/mybot --opponents shark aggressor --hands 2000 --workers 4
 
 `poker bench` plays a duplicate cash match against each opponent with **fixed seeds**, so every version of your bot faces exactly the same cards. It reports bb/100 per opponent with a 95% confidence interval, plus the average, and appends the result to `data/bench/<bot>.jsonl` with the bot's code hash, showing how the score changed since the last version. If the confidence intervals overlap, the change may just be noise: add hands.
 
+**Against Slumbot and GTO Wizard:** add them as opponents, e.g. `poker bench my_bots/mybot --opponents shark slumbot gto_wizard`. They deal on their own servers, so there are no fixed seeds: each plays 2 x `--hands` hands, scored by their luck-adjusted bb/100 (with raw chips alongside). Slumbot is free, so use it while iterating. Save GTO Wizard for a final check, because its quota is shared: each bot may play at most 5,000 hands a day against it (`GTO_WIZARD_DAILY_HANDS_PER_BOT` changes this). Every hand played against either is logged in `data/external/usage.jsonl`.
+
 ### Building bots with an agent
 
 The repo ships a Claude Code skill, [`.claude/skills/build-poker-bot`](.claude/skills/build-poker-bot/SKILL.md), that takes an agent from an empty folder to a pull request. Ask Claude Code to build a poker bot and it follows the skill:

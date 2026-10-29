@@ -25,8 +25,9 @@ class FakeClient:
     """Replays recorded hands in order, checking that we send what was sent
     then. One session per hand in play, like the real API."""
 
-    def __init__(self, hands=HANDS):
+    def __init__(self, hands=HANDS, strict=True):
         self.hands = hands
+        self.strict = strict        # False: answer with the recording whatever we send
         self.started = 0
         self.open = {}              # token -> responses still to come
         self.lock = threading.Lock()
@@ -48,7 +49,7 @@ class FakeClient:
     def act(self, token, incr):
         with self.lock:
             x = self.open[token].pop(0)
-        assert incr == x["sent"], f"sent {incr}, the recording sent {x['sent']}"
+        assert incr == x["sent"] or not self.strict, f"sent {incr}, the recording sent {x['sent']}"
         return x["resp"]
 
 
@@ -141,3 +142,40 @@ def test_sessions_play_one_hand_at_a_time(tmp_path):
 def test_too_many_workers_is_refused(tmp_path):
     with pytest.raises(ValueError, match="1-3"):
         play(tmp_path, hands=1, workers=4)
+
+
+# ---------------------------------------------------------------------------
+# poker bench with external opponents, and the usage log / GTO Wizard's cap
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def usage_file(tmp_path, monkeypatch):
+    f = tmp_path / "usage.jsonl"
+    monkeypatch.setattr(external, "USAGE_FILE", f)
+    return f
+
+
+def test_bench_against_slumbot_scores_luck_adjusted(tmp_path, monkeypatch, usage_file):
+    from arena.bench import bench
+    # a real bot won't play like the recording, so take its answers regardless
+    monkeypatch.setattr(slumbot, "Client", lambda: FakeClient(strict=False))
+    r = bench("ref_bot_2", opponents=["slumbot", "aggressor"], hands=6, bench_dir=tmp_path / "bench")
+    by = {o["opponent"]: o for o in r["opponents"]}
+    s = by["slumbot"]
+    assert s["external"] and s["score_kind"] == "baseline" and s["hands"] == 12
+    assert s["bb_per_100"] is not None and s["ci95"] is not None and "chips_bb_per_100" in s
+    assert not by["aggressor"].get("external") and by["aggressor"]["hands"] == 12
+    assert external.usage("slumbot", "ref_bot_2") == 12
+
+
+def test_gto_wizard_daily_cap(usage_file, monkeypatch):
+    from arena import gtow
+    g = gtow.GTOWizard()
+    monkeypatch.setenv("GTO_WIZARD_DAILY_HANDS_PER_BOT", "100")
+    external.check_budget(g, "mybot", 100)
+    external.record_usage(g, "mybot", 60, "m1")
+    external.record_usage(g, "other", 90, "m2")             # other bots don't count
+    external.check_budget(g, "mybot", 40)
+    with pytest.raises(external.ExternalError, match="daily cap of 100"):
+        external.check_budget(g, "mybot", 41)
+    external.check_budget(slumbot.Slumbot(), "mybot", 10 ** 6)   # Slumbot has no cap

@@ -22,6 +22,7 @@ street) and "_" (end of a street); HandTracker replays them to recover every
 action and build the state a bot sees.
 """
 
+import json
 import os
 import threading
 import time
@@ -43,6 +44,9 @@ STARTING_STACK, SB, BB = 20_000, 50, 100
 BOARD_LEN = {"preflop": 0, "flop": 3, "turn": 4, "river": 5}
 STREETS = ("preflop", "flop", "turn", "river")
 REPO_ENV = Path(__file__).resolve().parent.parent / ".env"
+USAGE_FILE = Path(os.environ.get("POKER_EXTERNAL_USAGE",
+                                 Path(__file__).resolve().parent.parent / "data" / "external" / "usage.jsonl"))
+_usage_lock = threading.Lock()
 
 
 class ExternalError(Exception):
@@ -86,6 +90,11 @@ class Opponent:
     score_kind = None               # what its luck-adjusted score is called
     default_workers = 1             # hands in play at once, by default ...
     max_workers = 1                 # ... and at most
+    cap_setting = None              # the setting that changes daily_cap_per_bot
+
+    def daily_cap_per_bot(self):
+        """Hands one bot may play against it per day (None: no cap)."""
+        return None
 
     def check_configured(self):
         """Raise ExternalError if it can't be played here (e.g. no API key)."""
@@ -414,6 +423,48 @@ class ExternalMatch:
         return {"deltas": delta, "score": view.score}
 
 
+# -- usage: hands played against each external bot, for quotas -------------------
+
+def record_usage(opponent: Opponent, bot: str, hands: int, match_id: str):
+    if not hands:
+        return
+    entry = {"date": time.strftime("%Y-%m-%d"), "time": time.strftime("%H:%M:%S"),
+             "opponent": opponent.name, "bot": bot, "hands": hands, "match": match_id}
+    with _usage_lock:
+        USAGE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with open(USAGE_FILE, "a") as fh:
+            fh.write(json.dumps(entry) + "\n")
+
+
+def usage(opponent: str, bot: str = None, since: str = None) -> int:
+    """Hands played against `opponent` (by `bot`, on or after date `since`)."""
+    if not USAGE_FILE.is_file():
+        return 0
+    total = 0
+    for line in USAGE_FILE.read_text().splitlines():
+        if not line.strip():
+            continue
+        e = json.loads(line)
+        if e["opponent"] == opponent and (bot is None or e["bot"] == bot) and \
+                (since is None or e["date"] >= since):
+            total += e["hands"]
+    return total
+
+
+def check_budget(opponent: Opponent, bot: str, hands: int):
+    """Raise ExternalError if `bot` playing `hands` more hands today would go
+    over the opponent's daily cap per bot."""
+    cap = opponent.daily_cap_per_bot()
+    if cap is None:
+        return
+    today = usage(opponent.name, bot, since=time.strftime("%Y-%m-%d"))
+    if today + hands > cap:
+        raise ExternalError(
+            f"{bot} has played {today} hands against {opponent.title} today; {hands} more would "
+            f"pass the daily cap of {cap} per bot (shared quota). Play fewer hands, use slumbot, "
+            f"or raise the cap with {opponent.cap_setting}.")
+
+
 def score_stats(scores: list) -> dict:
     """Luck-adjusted bb/100 with a 95% confidence interval."""
     scores = [s for s in scores if s is not None]
@@ -517,6 +568,7 @@ def run_external_match(opponent: Opponent, bot_spec, hands: int, match_id: str =
     seat = make_bot_seats([bot_spec], config, use_docker,
                           seed=int.from_bytes(os.urandom(4), "big"))[0]
     workers = workers or default_workers(opponent, seat, pace_ms)
+    check_budget(opponent, seat.name, hands)
     t0 = time.time()
     with EventLog(run_dir) as log:
         log.listeners.extend(listeners)
@@ -530,6 +582,7 @@ def run_external_match(opponent: Opponent, bot_spec, hands: int, match_id: str =
             raise
         finally:
             final = outcome or getattr(log, "final", {})
+            record_usage(opponent, seat.name, final.get("hands") or 0, match_id)
             summary = {
                 "kind": "match", "dealer": opponent.name, "match_id": match_id, "seed": None,
                 "config": config.to_dict(), "seats": [seat.info(), opponent.info()],

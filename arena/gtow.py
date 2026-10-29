@@ -26,6 +26,10 @@ NAME = "gto_wizard"                 # GTO Wizard's name in our logs
 API_NAME = "GTO Wizard"             # ... and in the API's player list
 DEFAULT_WORKERS = 5                 # hands in play at once (as GTO Wizard's own client)
 MAX_WORKERS = 20                    # GTO Wizard's limit
+# Hands one bot may play against GTO Wizard per day. The key's ~100k hands a
+# month are shared by every bot (and agent) using it.
+DAILY_CAP_SETTING = "GTO_WIZARD_DAILY_HANDS_PER_BOT"
+DEFAULT_DAILY_CAP = 5000
 
 
 class GTOWizardError(ExternalError):
@@ -127,8 +131,13 @@ class GTOWizard(external.Opponent):
     default_workers = DEFAULT_WORKERS
     max_workers = MAX_WORKERS
 
+    cap_setting = DAILY_CAP_SETTING
+
     def check_configured(self):
         api_key()
+
+    def daily_cap_per_bot(self):
+        return int(external.env_value(DAILY_CAP_SETTING) or DEFAULT_DAILY_CAP)
 
     def backend(self):
         return Backend()

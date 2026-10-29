@@ -520,8 +520,10 @@ def cmd_bench(args):
     from arena.bench import bench
 
     def progress(r):
-        _say(args, f"  vs {r['opponent']:<16} {r['bb_per_100']:>+8.1f} bb/100 ± {r['ci95']:.1f}"
-                   + (f"  ({r['timeouts']} timeouts)" if r["timeouts"] else ""))
+        how = (f"  ({r['score_kind']}, luck-adjusted; chips {r['chips_bb_per_100']:+.1f})"
+               if r.get("external") else "")
+        _say(args, f"  vs {r['opponent']:<16} {r['bb_per_100']:>+8.1f} bb/100 ± {r['ci95'] or 0:.1f}"
+                   + how + (f"  ({r['timeouts']} timeouts)" if r["timeouts"] else ""))
     try:
         _say(args, f"Benchmarking {args.bot}: {args.hands} hands x 2 seats per opponent")
         result = bench(args.bot, opponents=args.opponents, hands=args.hands, workers=args.workers,
@@ -763,7 +765,9 @@ def build_parser():
                         description="Duplicate heads-up cash matches with fixed seeds against each "
                                     "opponent; reports bb/100 with 95%% CIs and keeps a history.")
     bn.add_argument("bot", help="bot name or path")
-    bn.add_argument("--opponents", nargs="+", help="opponents (default: every bot in bots/)")
+    bn.add_argument("--opponents", nargs="+",
+                    help="opponents (default: every bot in bots/); may include slumbot and "
+                         "gto_wizard, played through their APIs and scored luck-adjusted")
     bn.add_argument("--hands", type=int, default=500, help="hands per seat per opponent (default 500)")
     bn.add_argument("--workers", type=int, default=1)
     bn.add_argument("--docker", action="store_true")

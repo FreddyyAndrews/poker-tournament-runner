@@ -11,6 +11,12 @@ from duplicate hand pairs (pairing the same deal from both seats cancels most
 of the card luck), and the average across opponents. Every bench is appended
 to data/bench/<bot>.jsonl with the bot's content hash, so you can see how each
 version did.
+
+Opponents may include the external bots, slumbot and gto_wizard (never by
+default). They deal on their own servers, so there are no fixed seeds or
+duplicate: the bot plays 2 x hands hands against each, and the score is
+their luck-adjusted bb/100 (Slumbot's baseline, GTO Wizard's AIVAT), with
+its 95% CI. Raw chips are kept as chips_bb_per_100.
 """
 
 import json
@@ -19,7 +25,7 @@ import time
 from pathlib import Path
 
 from arena import bots as botlib
-from arena import structures
+from arena import external, structures
 from arena.events import read_events
 from arena.seeds import derive_seed
 from arena.stats import mean_ci
@@ -49,7 +55,14 @@ def bench(bot: str, opponents=None, hands: int = 500, workers: int = 1, use_dock
           bench_dir: Path = BENCH_DIR, progress=()) -> dict:
     (spec,) = botlib.resolve_all([bot])
     opponents = opponents or default_opponents(spec.name)
-    opp_specs = botlib.resolve_all(opponents)
+    ext = [external.find(o) for o in opponents if external.find(o)]
+    for o in ext:
+        try:
+            o.check_configured()
+            external.check_budget(o, spec.name, 2 * hands)
+        except external.ExternalError as e:
+            raise ValueError(str(e)) from None
+    opp_specs = botlib.resolve_all([o for o in opponents if not external.find(o)]) + ext
     if any(o.name == spec.name for o in opp_specs):
         opp_specs = [o for o in opp_specs if o.name != spec.name]
     stamp = time.strftime("%Y%m%d_%H%M%S")
@@ -57,7 +70,26 @@ def bench(bot: str, opponents=None, hands: int = 500, workers: int = 1, use_dock
     structure = structures.flat(50, 100)
     t0 = time.time()
 
+    def play_external(opp):
+        s = external.run_external_match(opp, spec, 2 * hands, match_id=f"vs_{opp.name}",
+                                        runs_dir=runs_dir, use_docker=use_docker)
+        if s["stopped"] != "hand_limit":
+            raise RuntimeError(f"bench match against {opp.name} stopped: {s['stopped']}")
+        mine = next(r for r in s["results"] if r["bot"] == spec.name)
+        score = s["score"][spec.name]
+        result = {"opponent": opp.name, "opponent_hash": None, "external": True,
+                  "score_kind": score["kind"], "hands": s["hands"],
+                  "bb_per_100": score["bb_per_100"], "ci95": score["ci95"],
+                  "chips_bb_per_100": mine["bb_per_100"],
+                  "timeouts": mine["timeouts"] or 0, "errors": mine["errors"] or 0,
+                  "matches": [s["match_id"]]}
+        for fn in progress:
+            fn(result)
+        return result
+
     def play_opponent(opp):
+        if isinstance(opp, external.Opponent):
+            return play_external(opp)
         seed = derive_seed(BENCH_SEED, "bench", opp.name, hands)
         legs = []
         for leg, order in ((1, [spec, opp]), (2, [opp, spec])):
