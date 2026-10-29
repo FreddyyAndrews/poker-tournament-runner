@@ -11,6 +11,7 @@ Ground rules:
 - Only change files in `my_bots/<name>/`. The engine, the tools and other bots are off limits; if a tool is broken, tell the user and don't patch it in your branch.
 - Never edit another agent's worktree. Their bots are opponents: play them by name, and don't read their code.
 - Keep every claim in the PR reproducible: give the seed, the command and the code hash for each.
+- Outside bots (Slumbot, GTO Wizard) are shared and limited: follow their budget in step 3. Never read, print or copy `.env`.
 
 ## 1. Set up the worktree
 
@@ -90,6 +91,22 @@ $POKER run --format bracket --bots my_bots/<name> $($S/opponents.sh --names) sha
 
 Other agents' bots change while you work (each result records every bot's code hash), so treat those results as a scrimmage, not a fixed benchmark. The bench (reference bots, fixed seeds) is the stable score.
 
+**Outside bots: Slumbot and GTO Wizard.** Two strong heads-up bots, played through their own APIs, as `slumbot` and `gto_wizard`. They are far stronger than the reference bots, so they show leaks the bench can't. They play a fixed game: heads-up, 200bb at 50/100, every hand from the starting stack.
+- They deal on their own servers: no seeds, no duplicate. Judge by the **luck-adjusted bb/100** with its 95% CI, never raw chips. Slumbot's score is its baseline, GTO Wizard's is AIVAT. Even luck-adjusted, the CI is wide: about ±140 bb/100 at 200 hands, so use 2,000+ hands to compare two versions.
+- Bench them **separately** from the reference bench, so its history stays comparable:
+  ```bash
+  # Slumbot: free, while iterating. 2 x 1000 hands, about 8-15 minutes
+  $POKER bench my_bots/<name> --opponents slumbot --hands 1000
+  # GTO Wizard: final check only. 2 x 1250 = 2,500 hands
+  $POKER bench my_bots/<name> --opponents gto_wizard --hands 1250
+  # watch a few hands, or study one match
+  $POKER match my_bots/<name> slumbot --hands 30 --pace 300 --id <name>_slum_watch1
+  $PY $S/analyze_match.py <name>_slum_watch1 <name>
+  ```
+- **Slumbot budget:** it is a free service run by one person. The tools already cap it at 3 hands at once; on top of that, run **one Slumbot bench at a time** (never in parallel with another Slumbot match), and only at checkpoints: after a change has passed the reference bench, not on every edit. About 10,000 hands a day per agent at most.
+- **GTO Wizard budget:** one API key with ~100,000 hands a month, shared by every agent and the user. Each bot may play at most 5,000 hands a day against it, and the tools refuse anything beyond that. Use it **once per final version** (the 2,500-hand bench above), not for iteration. If the tools refuse ("daily cap"), stop using it and tell the user. Don't raise the cap or work around it (e.g. by renaming the bot).
+- `poker match` and `poker bench` print the luck-adjusted result. Every hand you play against either bot is logged in `<main>/data/external/usage.jsonl`.
+
 **Play it yourself (optional).** On `http://127.0.0.1:8765/#/new`, add You and your bot, then press Start and play. Or ask the user to try it.
 
 ## 4. Refine loop
@@ -100,6 +117,7 @@ Repeat until improvements stop or the user's time budget runs out:
 2. **Change one thing** in `bot.py`, with a hypothesis ("stop calling river bets with one pair vs aggressor").
 3. **Validate**, then re-run `$POKER bench my_bots/<name> --workers 4`. It uses the same seeds every time, so differences come from your code.
 4. **Keep the change** only if `overall_bb_per_100` improved, and check each opponent's row too (an improvement inside the CI is noise; don't trade a big loss against one bot for a small gain against another). Otherwise revert it. Bigger `--hands` shrinks the CI when results are close.
+   - Every few kept changes, run the Slumbot bench as a checkpoint. A change that beats the reference bots but loses clearly to Slumbot (CIs not overlapping) is usually overfitting to weak opponents.
 5. **Record it** in `my_bots/<name>/README.md` (Development log: version, change, bench) and commit in your worktree: `git add my_bots/<name> && git commit -m "<name>: <change>"`.
 
 Before finishing, check for failure modes the bench doesn't show:
@@ -111,7 +129,13 @@ Before finishing, check for failure modes the bench doesn't show:
 ## 5. Open the PR
 
 1. **README.** Finish `my_bots/<name>/README.md`: a strategy section covering preflop, postflop, sizing, opponent modelling and the time budget; the development log; and known weaknesses.
-2. **Final numbers.** Run the final bench, plus one round robin against the other agents and the reference bots, on fixed seeds.
+2. **Final numbers.** On the final code, run:
+   - the reference bench;
+   - one round robin against the other agents and the reference bots, on fixed seeds;
+   - the Slumbot bench (2 x 1000 hands);
+   - **once**, the GTO Wizard bench (2 x 1250 hands).
+
+   pr_report.py picks the outside-bot results up from the bench history and marks any played with older code.
 3. **Metrics.** Generate the metrics section:
    ```bash
    $PY $S/pr_report.py <name> --run <name>_rr_final [--run <name>_br_series_1] [--match <name>_t9] > /tmp/<name>_metrics.md
@@ -132,7 +156,7 @@ PR body structure:
 ### Strategy
 <a paragraph on the idea, then bullets: preflop, postflop, bet sizing, opponent modelling, time budget>
 
-<paste the pr_report.py output: bench per opponent with CIs, version history, round robin / bracket vs other agents, match health>
+<paste the pr_report.py output: bench per opponent with CIs, version history, Slumbot and GTO Wizard (luck-adjusted), round robin / bracket vs other agents, match health>
 
 ### What changed along the way
 <the dev log: each change, why, and its bench effect, including reverted ideas>
@@ -163,4 +187,4 @@ cd <main> && git worktree remove ../poker-bot-<name> && git branch -d bot/<name>
 | `setup.sh <name>` | worktree + branch + scaffold + validator; prints the env to export |
 | `opponents.sh [--names]` | reference bots and other agents' bots, all playable by name |
 | `$PY analyze_match.py <match_key or dir> <bot>` | leaks from one match: actions by street, think time, errors, biggest losing hands with logs/debug |
-| `$PY pr_report.py <bot> [--run ID ...] [--match KEY ...]` | Markdown metrics for the PR: bench per opponent and version history, run standings, match health |
+| `$PY pr_report.py <bot> [--run ID ...] [--match KEY ...]` | Markdown metrics for the PR: bench per opponent and version history, Slumbot / GTO Wizard results, run standings, match health |

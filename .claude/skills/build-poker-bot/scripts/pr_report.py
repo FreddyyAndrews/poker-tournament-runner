@@ -3,8 +3,10 @@
 
     pr_report.py <bot> [--run RUN_ID ...] [--match MATCH_KEY ...]
 
-- Bench: the latest `poker bench` result per opponent (bb/100, 95% CI) and the
-  version history (one row per code hash) from data/bench/<bot>.jsonl.
+- Bench: the latest `poker bench` against the reference bots (bb/100, 95% CI)
+  and its version history (one row per code hash) from data/bench/<bot>.jsonl.
+- Outside bots: the latest bench result against each of Slumbot and GTO Wizard
+  (luck-adjusted bb/100, 95% CI, raw chips), with the code hash it was played with.
 - --run: standings (and head to head) for each run or series the bot played,
   e.g. a round robin or a bracket series against other agents' bots.
 - --match: per-match results with think time, timeouts and errors.
@@ -38,8 +40,12 @@ def ci(v, c):
     return f"{v:+.1f} ± {c:.1f}"
 
 
+def _external(entry):
+    return any(o.get("external") for o in entry["opponents"])
+
+
 def bench_section(bot):
-    hist = load_history(bot, BENCH_DIR)
+    hist = [h for h in load_history(bot, BENCH_DIR) if not _external(h)]
     if not hist:
         return [f"_No bench history for {bot}: run `$POKER bench my_bots/{bot} --workers 4`._", ""]
     last = hist[-1]
@@ -54,6 +60,28 @@ def bench_section(bot):
         seen[h["hash"]] = h
     for h in seen.values():
         out.append(f"| {h['time']} | `{h['hash']}` | {ci(h['overall_bb_per_100'], h['overall_ci95'])} |")
+    return out + [""]
+
+
+def external_section(bot):
+    """The latest result against each outside bot (Slumbot, GTO Wizard), from any bench."""
+    hist = load_history(bot, BENCH_DIR)
+    latest = {}
+    for h in hist:
+        for o in h["opponents"]:
+            if o.get("external"):
+                latest[o["opponent"]] = (h, o)
+    if not latest:
+        return [f"_No bench against Slumbot or GTO Wizard: run `$POKER bench my_bots/{bot} "
+                f"--opponents slumbot --hands 1000`._", ""]
+    current = hist[-1]["hash"]
+    out = ["### Outside bots (they deal: no fixed seeds; scored luck-adjusted)", "",
+           "| Opponent | Hands | Luck-adjusted bb/100 (95% CI) | Score | Chips bb/100 | Code hash | Timeouts | Errors |",
+           "|---|---:|---:|---|---:|---|---:|---:|"]
+    for name, (h, o) in sorted(latest.items()):
+        tag = "" if h["hash"] == current else " (older code)"
+        out.append(f"| {name} | {o['hands']} | {ci(o['bb_per_100'], o['ci95'] or 0)} | {o['score_kind']} | "
+                   f"{o['chips_bb_per_100']:+.1f} | `{h['hash']}`{tag} | {o['timeouts']} | {o['errors']} |")
     return out + [""]
 
 
@@ -89,17 +117,20 @@ def run_section(bot, run_id):
 
 
 def match_section(bot, keys):
-    out = ["### Matches", "", "| Match | Place | Chips | bb/100 | Hands | Avg / max think (ms) | Timeouts | Errors |",
-           "|---|---:|---:|---:|---:|---:|---:|---:|"]
+    out = ["### Matches", "", "| Match | Place | Chips | bb/100 | Luck-adjusted bb/100 | Hands | Avg / max think (ms) | Timeouts | Errors |",
+           "|---|---:|---:|---:|---:|---:|---:|---:|---:|"]
     for k in keys:
         f = next(RUNS.glob(f"**/{k}/summary.json"), None) if not (RUNS / k / "summary.json").is_file() else RUNS / k / "summary.json"
         if not f:
-            out.append(f"| {k} | not found | | | | | | |")
+            out.append(f"| {k} | not found | | | | | | | |")
             continue
-        r = next((x for x in json.loads(f.read_text())["results"] if x["bot"] == bot), None)
+        summary = json.loads(f.read_text())
+        r = next((x for x in summary["results"] if x["bot"] == bot), None)
+        sc = (summary.get("score") or {}).get(bot)
+        adj = f"{ci(sc['bb_per_100'], sc['ci95'] or 0)} ({sc['kind']})" if sc and sc.get("bb_per_100") is not None else ""
         if r:
-            out.append(f"| {k} | {r['place']} | {r['delta']:+,} | {r['bb_per_100']:+.1f} | {r['hands_played']} | "
-                       f"{r['avg_think_ms']:.2f} / {r['max_think_ms']:.2f} | {r['timeouts']} | {r['errors']} |")
+            out.append(f"| {k} | {r['place']} | {r['delta']:+,} | {r['bb_per_100']:+.1f} | {adj} | {r['hands_played']} | "
+                       f"{r['avg_think_ms'] or 0:.2f} / {r['max_think_ms'] or 0:.2f} | {r['timeouts']} | {r['errors']} |")
     return out + [""]
 
 
@@ -109,7 +140,7 @@ def main():
     ap.add_argument("--run", action="append", default=[])
     ap.add_argument("--match", action="append", default=[])
     a = ap.parse_args()
-    out = ["## Metrics", ""] + bench_section(a.bot)
+    out = ["## Metrics", ""] + bench_section(a.bot) + external_section(a.bot)
     for r in a.run:
         out += run_section(a.bot, r)
     if a.match:
