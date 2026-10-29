@@ -82,8 +82,8 @@ def live_chips(match_dir: Path):
                         st["delta"] = {n: s - st["start"] for n, s in st["stacks"].items()}
         if st["start"] is None:
             return None
-        return {"hand": st["done"], "hands": st["hands"], "stacks": dict(st["stacks"]),
-                "delta": dict(st["delta"])}
+        return {"hand": st["done"], "hands": st["hands"], "cash": st["cash"],
+                "stacks": dict(st["stacks"]), "delta": dict(st["delta"])}
 
 
 def run_progress(run_dir: Path, run: dict, run_id: str, active: bool = False):
@@ -129,11 +129,12 @@ def bracket_progress(run_dir: Path, cfg, run_id: str, active: bool = False) -> d
                 if tie["status"] == "running":
                     live = live_chips(mdir)
                     if live:
-                        tie.update(stacks=live["stacks"], hands=live["hand"], live=live)
+                        tie.update(stacks=live["stacks"], delta=live["delta"], hands=live["hand"], live=live)
                 if rec:
                     w, _, how = formats.two_player_winner(rec, derive_seed(cfg.seed, "tiebreak", mid))
                     tie.update(winner=w, how=how, hands=rec["hands"],
-                               stacks={r["bot"]: r["final_stack"] for r in rec["results"]})
+                               stacks={r["bot"]: r["final_stack"] for r in rec["results"]},
+                               delta={r["bot"]: r["delta"] for r in rec["results"]})
                     nxt.append((w, True))
                 else:
                     nxt.append((None, False))
@@ -150,7 +151,8 @@ def bracket_progress(run_dir: Path, cfg, run_id: str, active: bool = False) -> d
         r["name"] = name
     live = {t["key"]: {**t["live"], "players": t["players"]}
             for r in rounds for t in r["ties"] if t.get("live")}
-    return {"kind": "bracket", "rounds": rounds, "champion": champion, "live": live}
+    return {"kind": "bracket", "rounds": rounds, "champion": champion, "live": live,
+            "cash": cfg.mode == "cash"}
 
 
 # ---------------------------------------------------------------------------

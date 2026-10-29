@@ -19,7 +19,8 @@ export function Standings({ state, colorOf }: { state: TableState; colorOf: (n: 
     (a.busted ? 1 : 0) - (b.busted ? 1 : 0) || score(b) - score(a) || (a.place ?? 99) - (b.place ?? 99))
   return (
     <table className="standings num" data-testid="standings">
-      {cash && <thead><tr><th /><th className="r">Stack</th><th className="r">Net</th>
+      {cash && <thead><tr><th /><th className="r" title="Chips in front of the player this hand; every hand starts from the starting stack">This hand</th>
+        <th className="r" title="Chips won over the match: the score in a cash game">Net</th>
         {scored && <th className="r" title={kind === 'AIVAT' ? "Luck-adjusted bb/100 (GTO Wizard's AIVAT score)"
           : "Luck-adjusted bb/100 (your result minus what Slumbot won with your cards against itself)"}>
           {kind === 'AIVAT' ? 'AIVAT' : 'Adj.'} bb/100</th>}</tr></thead>}

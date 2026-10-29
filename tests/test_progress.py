@@ -95,7 +95,7 @@ def test_live_chips_reads_a_growing_log(tmp_path):
     start = {"type": "match_start", "config": {"starting_stack": 1000, "mode": "cash", "hands": 50},
              "seats": [{"name": "a"}, {"name": "b"}]}
     f.write_text(json.dumps(start) + "\n")
-    assert live_chips(d) == {"hand": 0, "hands": 50, "stacks": {"a": 1000, "b": 1000},
+    assert live_chips(d) == {"hand": 0, "hands": 50, "cash": True, "stacks": {"a": 1000, "b": 1000},
                              "delta": {"a": 0, "b": 0}}
     with open(f, "a") as fh:
         fh.write(json.dumps({"type": "hand_end", "stacks": {"a": 1200, "b": 800},

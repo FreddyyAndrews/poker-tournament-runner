@@ -34,7 +34,10 @@ export function BracketView({ p }: { p: any }) {
                     <div key={i} className={'slot' + (won ? ' won' : '') + (lost ? ' lost' : '')}>
                       <span className="seed num">{t.seeds[i] ?? ''}</span>
                       <span className="who">{name ?? (t.bye ? 'bye' : 'TBD')}</span>
-                      <span className="num">{t.stacks && name ? fmt(t.stacks[name]) : ''}</span>
+                      {/* cash: stacks reset every hand, so show chips won instead */}
+                      <span className="num">{!name ? '' : p.cash && t.delta
+                        ? (t.delta[name] > 0 ? '+' : t.delta[name] === 0 ? '\u00b1' : '') + fmt(t.delta[name])
+                        : t.stacks ? fmt(t.stacks[name]) : ''}</span>
                     </div>
                   )
                 })}

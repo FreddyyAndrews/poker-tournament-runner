@@ -126,11 +126,14 @@ export function RunView({ runId }: { runId: string }) {
               <span className="pill live"><span className="dot" />Live</span>
               <span>{k.split('/').pop()}</span>
               {c && <span className="np-chips num" data-testid="np-chips">
-                {c.players.map((n: string) => (
-                  <span key={n}><span className="muted">{n}</span> {fmt(c.stacks[n])}
-                    <span className={c.delta[n] > 0 ? 'up' : c.delta[n] < 0 ? 'down' : 'muted'}>
-                      {' '}({c.delta[n] > 0 ? '+' : ''}{fmt(c.delta[n])})</span></span>
-                ))}
+                {c.players.map((n: string) => {
+                  // cash: stacks reset every hand, so the net is the number; otherwise stack (change)
+                  const net = <span className={c.delta[n] > 0 ? 'up' : c.delta[n] < 0 ? 'down' : 'muted'}>
+                    {c.delta[n] > 0 ? '+' : c.delta[n] === 0 ? '\u00b1' : ''}{fmt(c.delta[n])}</span>
+                  return c.cash
+                    ? <span key={n}><span className="muted">{n}</span> {net}</span>
+                    : <span key={n}><span className="muted">{n}</span> {fmt(c.stacks[n])} ({net})</span>
+                })}
                 <span className="muted">hand {fmt(c.hand)}{c.hands ? ` / ${fmt(c.hands)}` : ''}</span>
               </span>}
               <span className="spacer" />
