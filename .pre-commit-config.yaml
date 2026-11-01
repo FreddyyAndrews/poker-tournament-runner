@@ -1,0 +1,58 @@
+# Git hooks, run by pre-commit on the files each commit stages.
+#   make hooks    install them (once per clone; worktrees share them)
+#   make lint     run them on every file
+# A hook that fixes a file (whitespace, an unused import) stops the commit:
+# look at the change, `git add` it and commit again. Never skip them with
+# --no-verify. gitleaks comes from Homebrew (`brew install gitleaks`); the
+# other tools are pinned here and installed by pre-commit itself.
+
+# Reference bots are benchmark opponents and the bench keys results by their
+# code hash, so no hook may rewrite them.
+exclude: ^bots/
+
+repos:
+  - repo: local
+    hooks:
+      - id: gitleaks
+        name: gitleaks (secrets in staged changes)
+        entry: gitleaks git --pre-commit --staged --redact --no-banner --verbose
+        language: system
+        pass_filenames: false
+        always_run: true
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=1024]
+      - id: check-yaml
+      - id: check-toml
+      - id: check-json
+        exclude: ^web/tsconfig\.json$     # JSON with comments
+      # The fixers leave bot data files alone: a bot's code hash covers its
+      # whole folder, so a fixed newline would make it a new version.
+      - id: end-of-file-fixer
+        exclude: ^my_bots/[^/]+/data/
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
+        exclude: ^my_bots/[^/]+/data/
+      - id: mixed-line-ending
+        args: [--fix=lf]
+        exclude: ^my_bots/[^/]+/data/
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.17.3
+    hooks:
+      - id: ruff-check
+        name: ruff (Python lint, see [tool.ruff] in pyproject.toml)
+        args: [--fix]
+
+  - repo: local
+    hooks:
+      - id: web-typecheck
+        name: tsc (web UI types)
+        entry: bash -c 'cd web && if [ -d node_modules ]; then npx --no-install tsc --noEmit; else echo "web/node_modules missing, skipping the type check (make web installs it)"; fi'
+        language: system
+        files: ^web/(src/|tsconfig\.json$|package\.json$)
+        pass_filenames: false

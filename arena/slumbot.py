@@ -22,7 +22,6 @@ Slumbot account when one is configured.
 """
 
 import json
-import os
 import queue
 import re
 import time

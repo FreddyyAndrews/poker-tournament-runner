@@ -7,7 +7,12 @@ No Docker, Redis, or Supabase needed.
 Runs real matches using the actual game engine and shows results live.
 """
 
-import sys, os, json, time, threading, uuid, random
+import sys
+import os
+import json
+import time
+import threading
+import uuid
 sys.path.insert(0, os.path.dirname(__file__))
 
 from flask import Flask, Response, jsonify, render_template_string
@@ -293,7 +298,6 @@ def stream():
 @app.route("/run/match", methods=["POST"])
 def run_single_match():
     """Run one 6-player match and return updated standings."""
-    bot_ids  = list(BOT_PATHS.keys())
     match_id = f"demo_{uuid.uuid4().hex[:8]}"
 
     emit(f"Starting match {match_id}...", "dim")
@@ -309,7 +313,6 @@ def run_single_match():
     for bid, delta in result["chip_delta"].items():
         all_results.append({"bot_id": bid, "bot_path": BOT_PATHS.get(bid,""), "chip_delta": delta})
 
-    prev = {s["bot_id"]: s for s in state["standings"]}
     new_standings = compute_standings(
         [{**s, "chip_delta": s["cumulative_delta"]} for s in state["standings"]] + all_results
     )

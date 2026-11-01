@@ -287,7 +287,6 @@ def test_validator_states_have_every_field_bots_get():
     """The validator's sample states must contain every key a real decision has,
     or bots that use documented fields fail validation."""
     from sandbox.validator import TEST_STATES
-    from arena.table import Table
     eng = PokerEngine("h", ["a", "b"])
     real = set(eng.start_hand()) | {"match_action_log", "time_limit_ms"}
     for t in TEST_STATES:

@@ -136,13 +136,12 @@ def _check_accounting(events) -> list:
     stacks = {s["name"]: cfg["starting_stack"] for s in start["seats"]}
     bankroll = dict(stacks)                     # cash mode: running total
     total = sum(stacks.values())
-    hand = None
     awards = 0
     for e in events:
         t = e["type"]
         where = f"hand {e.get('hand')}" + (f" table {e['table']}" if "table" in e else "")
         if t == "hand_start":
-            hand, awards = e["hand"], 0
+            awards = 0
             for name, s in e["stacks"].items():
                 expected = cfg["starting_stack"] if cash else stacks.get(name)
                 if s != expected:

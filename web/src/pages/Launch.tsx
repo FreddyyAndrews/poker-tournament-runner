@@ -461,4 +461,3 @@ async function post(path: string, body: unknown) {
   if (!r.ok) throw new Error(Array.isArray(data.detail) ? data.detail.map((d: any) => d.msg).join('; ') : data.detail ?? r.status)
   return data
 }
-

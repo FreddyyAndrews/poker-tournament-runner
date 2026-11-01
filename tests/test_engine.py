@@ -1,5 +1,6 @@
 """Tests for the Fullhouse game engine."""
-import sys, os
+import sys
+import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from engine.game import PokerEngine, STARTING_STACK, BIG_BLIND, SMALL_BLIND
@@ -70,7 +71,6 @@ def test_raise_min_snap():
     eng, ids = make_engine(2)
     state = eng.start_hand()
     seat = state["seat_to_act"]
-    min_raise = state["min_raise_to"]
     # Try to raise below minimum
     state2 = eng.apply_action(seat, {"action": "raise", "amount": 1})
     # Should still be valid — snapped to min

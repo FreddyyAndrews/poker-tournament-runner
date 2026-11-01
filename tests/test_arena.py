@@ -4,7 +4,6 @@ import os
 import subprocess
 import sys
 import textwrap
-from collections import Counter, defaultdict
 from pathlib import Path
 
 import pytest

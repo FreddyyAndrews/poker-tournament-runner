@@ -325,7 +325,8 @@ def test_warmup_runs_in_parallel(tmp_path):
 
 
 def test_validator_json_survives_a_printing_bot(tmp_path):
-    import json, subprocess
+    import json
+    import subprocess
     bot = tmp_path / "chatty.py"
     bot.write_text("print('loading')\ndef decide(state):\n    print('thinking', state['hand_num'])\n"
                    "    return {'action': 'check' if state['can_check'] else 'call'}\n")

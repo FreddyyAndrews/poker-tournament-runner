@@ -36,6 +36,8 @@ python3.10 -m venv .venv && source .venv/bin/activate
 # eval7 needs Cython<3 at build time and won't pick it up via build isolation.
 # This also installs the `poker` command.
 make install
+brew install gitleaks   # used by the git hooks
+make hooks          # install the git hooks: secrets, lint, whitespace
 
 make test           # all tests
 ```

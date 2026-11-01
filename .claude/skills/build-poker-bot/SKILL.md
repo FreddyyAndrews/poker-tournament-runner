@@ -10,6 +10,7 @@ You write one bot, `my_bots/<name>/bot.py`, in **your own git worktree** on bran
 Ground rules:
 - Only change files in `my_bots/<name>/`. The engine, the tools and other bots are off limits; if a tool is broken, tell the user and don't patch it in your branch.
 - Never edit another agent's worktree. Their bots are opponents: play them by name, and don't read their code.
+- Commits run git hooks (gitleaks for secrets, basic ruff lint, whitespace). If a hook fixes your file, review it, `git add` it and commit again; if it reports a problem, fix it. Never use `--no-verify`.
 - Keep every claim in the PR reproducible: give the seed, the command and the code hash for each.
 - Outside bots are shared and limited: Slumbot only, through the outside-bot proxy, as in step 3. **Never play GTO Wizard**: its quota is reserved for the user. Never read, print or copy `.env`, and never call slumbot.com or GTO Wizard yourself.
 

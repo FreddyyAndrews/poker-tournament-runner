@@ -16,8 +16,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from arena import gtow, proxy, slumbot
 
-SECRET_KEY = "gtow-secret-key-123"
-SECRET_PASSWORD = "slumbot-secret-pw-456"
+SECRET_KEY = "gtow-secret-key-123"  # gitleaks:allow (made up, for the fake API)
+SECRET_PASSWORD = "slumbot-secret-pw-456"  # gitleaks:allow (made up)
 
 
 class FakeUpstream:

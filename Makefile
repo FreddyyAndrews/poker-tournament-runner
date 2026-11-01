@@ -1,4 +1,4 @@
-.PHONY: install demo test validate clean web web-test proxy
+.PHONY: install demo test validate clean web web-test proxy hooks lint
 
 install:
 	@echo ">> Installing Cython<3 (eval7 build dep)"
@@ -13,6 +13,14 @@ install:
 proxy:
 	@echo ">> Outside-bot proxy: every Slumbot and GTO Wizard call goes through it"
 	poker proxy
+
+hooks:
+	@echo ">> Installing the git hooks (gitleaks, lint, whitespace; see .pre-commit-config.yaml)"
+	@command -v gitleaks >/dev/null || { echo "gitleaks is missing: brew install gitleaks"; exit 1; }
+	pre-commit install --allow-missing-config
+
+lint:
+	pre-commit run --all-files
 
 demo:
 	python3 demo.py

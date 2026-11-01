@@ -1,0 +1,4 @@
+# Known false positives in git history, by gitleaks fingerprint (commit:file:rule:line).
+# New code marks a fake secret in place with a `gitleaks:allow` comment instead.
+# tests/test_proxy.py: a made-up GTO Wizard key the proxy tests send to a fake API
+e1f3d83af735a6b6fe3f94053267b6f741773070:tests/test_proxy.py:generic-api-key:19
