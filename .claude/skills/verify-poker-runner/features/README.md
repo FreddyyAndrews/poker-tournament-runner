@@ -19,7 +19,7 @@ This directory is the maintained source for verifying what users do with the Pok
 ## Proof and skip reporting
 
 - Capture the user action and the resulting state: a screenshot before and after, plus an ARIA snapshot for UI; the command, its output and the exit code for CLI.
-- Back visible results with side effects: the `events.jsonl` exists and `poker verify` exits 0; human/LLM decisions appear in the log under their seat name; bench history is written.
+- Back visible results with side effects: the match log exists (`events.jsonl.gz` once the match ended) and `poker verify` exits 0; human/LLM decisions appear in the log under their seat name; bench history is written.
 - Record the feature ID and the entry point used with each artifact. A path that couldn't be reached is reported with the attempted command and the unmet precondition, never "verified" through a different path.
 
 ## Feature entry contract

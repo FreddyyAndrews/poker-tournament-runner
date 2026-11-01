@@ -1,6 +1,7 @@
 """Shutting the server down waits for running jobs, so their files are
 finished (match_end, summary.json, run.json / series.json) and their bot
 processes are stopped; new jobs are refused while stopping."""
+import gzip
 import json
 import os
 import signal
@@ -18,6 +19,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from fastapi.testclient import TestClient
 
+from arena.events import last_event, read_events
 from arena.server import create_app
 from arena.server.jobs import JobManager, ServerStopping
 
@@ -47,8 +49,7 @@ def test_shutdown_waits_for_a_decision_in_progress(tmp_path):
     summary = json.loads((d / "summary.json").read_text())
     assert summary["stopped"] == "cancelled"
     assert {r["bot"] for r in summary["results"]} == {"slow", "shark"}   # standings kept
-    lines = (d / "events.jsonl").read_text().splitlines()
-    assert json.loads(lines[-1])["type"] == "match_end"
+    assert read_events(d)[-1]["type"] == "match_end"
     assert not child_bot_processes()
 
 
@@ -62,8 +63,11 @@ def test_runs_and_series_finish_their_files(tmp_path):
     assert jobs.shutdown() == []
     assert json.loads((tmp_path / "runs" / "b" / "run.json").read_text())["status"] == "cancelled"
     assert json.loads((tmp_path / "runs" / "s" / "series.json").read_text())["status"] == "cancelled"
-    for f in (tmp_path / "runs").rglob("events.jsonl"):
-        assert f.read_text().endswith("\n")
+    logs = list((tmp_path / "runs").rglob("events.jsonl*"))
+    assert logs
+    for f in logs:                                   # every log ends on a whole line
+        text = gzip.open(f, "rt").read() if f.suffix == ".gz" else f.read_text()
+        assert text.endswith("\n")
     assert not child_bot_processes()
 
 
@@ -118,4 +122,4 @@ def test_ctrl_c_on_poker_serve_with_a_live_viewer(tmp_path):
     assert ended.get("yes")
     summary = json.loads((runs / "m" / "summary.json").read_text())
     assert summary["stopped"] == "cancelled" and summary["results"]
-    assert json.loads((runs / "m" / "events.jsonl").read_text().splitlines()[-1])["type"] == "match_end"
+    assert last_event(runs / "m")["type"] == "match_end"

@@ -16,7 +16,7 @@ can never leave a badge stuck on Live.
 import json
 from pathlib import Path
 
-from arena.events import EVENTS_FILE, SUMMARY_FILE
+from arena.events import SUMMARY_FILE, has_events, last_event
 
 RUN_FILE = "run.json"
 SERIES_FILE = "series.json"
@@ -28,20 +28,6 @@ def _read_json(path: Path):
     try:
         return json.loads(path.read_text())
     except (OSError, ValueError):
-        return None
-
-
-def last_event(path: Path):
-    """The last complete event in a log (reads only the tail), or None."""
-    if not path.is_file():
-        return None
-    with open(path, "rb") as fh:
-        fh.seek(0, 2)
-        fh.seek(max(0, fh.tell() - 65536))
-        lines = [l for l in fh.read().split(b"\n") if l.strip()]
-    try:
-        return json.loads(lines[-1]) if lines else None
-    except ValueError:
         return None
 
 
@@ -61,12 +47,12 @@ def match_status(match_dir: Path, active: bool) -> str:
     summary = _read_json(match_dir / SUMMARY_FILE)
     if summary is not None:
         return ended_status(summary.get("stopped"))
-    last = last_event(match_dir / EVENTS_FILE)
+    last = last_event(match_dir)
     if last and last.get("type") == "match_end":
         # logs without a summary (multi-table table logs) end with match_end
         return ended_status(last.get("stopped"))
     if active:
-        return LIVE if (match_dir / EVENTS_FILE).is_file() else "pending"
+        return LIVE if has_events(match_dir) else "pending"
     return "incomplete"
 
 

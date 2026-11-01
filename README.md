@@ -61,7 +61,7 @@ poker verify data/runs/<match-id>                 # replay the log and check it
 - **Seats are fixed** for the whole match, and the button moves to the next occupied seat each hand.
 - **Results** show each bot's place, final stack, chip delta, bb/100, hands played, think time, timeouts and errors. Add `--json` for machine-readable output.
 - **Every match is logged** to `data/runs/<match-id>/`:
-  - `events.jsonl` records every card, post, decision, award and elimination. Each decision includes what the bot saw, its reply, how it was applied, its think time, logs and `debug`.
+  - `events.jsonl` records every card, post, decision, award and elimination. Each decision includes what the bot saw, its reply, how it was applied, its think time, logs and `debug`. It is plain text while the match plays (so it can be followed live) and gzipped to `events.jsonl.gz` when it ends, about 20x smaller with nothing lost. Every `poker` command, the web UI and exports read either form; exports hold the plain log. `poker compress` gzips logs written before this (`--dry-run` to preview), and `POKER_COMPRESS_LOGS=0` keeps new logs plain.
   - `summary.json` holds the results.
 - **`poker verify`** replays the log through the engine with the recorded seed and decisions, and checks that the cards, chips, awards and places all match. Any edit to the log is caught.
 - **Seeds:** every match has one (generated if you don't pass `--seed`). The same seed and bots replay the same match: same cards, and each bot's `random`/`numpy.random` is seeded from it too.

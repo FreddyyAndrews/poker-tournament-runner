@@ -169,7 +169,7 @@ def test_run_verify_catches_edited_standings_and_missing_logs(tmp_path):
     data["standings"][0], data["standings"][1] = data["standings"][1], data["standings"][0]
     run_file.write_text(json.dumps(data))
     assert verify_run(r["run_dir"])["ok"]
-    (Path(r["run_dir"]) / "matches" / data["matches"][0]["match_id"] / "events.jsonl").unlink()
+    (Path(r["run_dir"]) / "matches" / data["matches"][0]["match_id"] / "events.jsonl.gz").unlink()
     assert not verify_run(r["run_dir"])["ok"]
 
 

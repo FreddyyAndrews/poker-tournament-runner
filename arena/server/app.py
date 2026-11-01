@@ -27,7 +27,8 @@ from pydantic import BaseModel
 import arena
 from arena import bots as botlib
 from arena import formats, structures
-from arena.events import DEFAULT_RUNS_DIR, EVENTS_FILE, SUMMARY_FILE
+from arena.events import DEFAULT_RUNS_DIR, EVENTS_FILE, SUMMARY_FILE, has_events, is_compressed, \
+    iter_lines
 from arena.pacing import DEFAULT_PACE_MS
 from arena.server.jobs import JobManager, ServerStopping
 from arena.server.mcp_server import build_mcp
@@ -125,7 +126,7 @@ def create_app(runs_dir: Path = DEFAULT_RUNS_DIR, port: int = 8765) -> FastAPI:
 
     def match_dir(key: str) -> Path:
         d = resolve(key)
-        if not (d / EVENTS_FILE).is_file() and not jobs.is_active(key.split("/")[0]):
+        if not has_events(d) and not jobs.is_active(key.split("/")[0]):
             raise HTTPException(404, f"no match {key!r}")
         return d
 
@@ -139,7 +140,7 @@ def create_app(runs_dir: Path = DEFAULT_RUNS_DIR, port: int = 8765) -> FastAPI:
         for name, kind in ((SERIES_FILE, "series"), (formats.RUN_FILE, "run"), (SUMMARY_FILE, "match")):
             if (d / name).is_file():
                 return kind, d / name
-        if (d / EVENTS_FILE).is_file():
+        if has_events(d):
             return "match", None
         return None, None
 
@@ -249,7 +250,7 @@ def create_app(runs_dir: Path = DEFAULT_RUNS_DIR, port: int = 8765) -> FastAPI:
                     continue
                 data = read_json(f) if f else {}
                 if kind == "match" and not data.get("seats"):
-                    first = _read_lines(d / EVENTS_FILE, 0, limit=1)
+                    first = _read_lines(d, 0, limit=1)
                     if first:
                         data = {"seats": first[0].get("seats", [])}
                 status = (match_status(d.name, d) if kind == "match"
@@ -290,7 +291,7 @@ def create_app(runs_dir: Path = DEFAULT_RUNS_DIR, port: int = 8765) -> FastAPI:
             out["matches"] = sorted(
                 ({"key": f"{run_id}/matches/{m.name}", "match_id": m.name,
                   "status": match_status(f"{run_id}/matches/{m.name}", m)}
-                 for m in mdir.iterdir() if (m / EVENTS_FILE).is_file()),
+                 for m in mdir.iterdir() if has_events(m)),
                 key=lambda m: m["match_id"]) if mdir.is_dir() else []
         return out
 
@@ -374,7 +375,7 @@ def create_app(runs_dir: Path = DEFAULT_RUNS_DIR, port: int = 8765) -> FastAPI:
     @app.get("/api/matches/{key:path}/events")
     def match_events(key: str, start: int = Query(0, alias="from"), as_: Optional[str] = Query(None, alias="as")):
         d = match_dir(key)
-        events = [player_view(e, as_) for e in _read_lines(d / EVENTS_FILE, start)]
+        events = [player_view(e, as_) for e in _read_lines(d, start)]
         return {"key": key, "from": start, "next": start + len(events), "events": events,
                 "status": match_status(key, d)}
 
@@ -395,11 +396,18 @@ def create_app(runs_dir: Path = DEFAULT_RUNS_DIR, port: int = 8765) -> FastAPI:
                     yield "event: end\ndata: {\"reason\": \"server_stopping\"}\n\n"
                     return
                 chunk = ""
-                if path.is_file():
+                try:
                     with open(path, encoding="utf-8") as fh:
                         fh.seek(pos)
                         chunk = fh.read()
                         pos = fh.tell()
+                except FileNotFoundError:
+                    if is_compressed(d):
+                        # finished and compressed (perhaps since the last read):
+                        # the rest comes from the compressed log, after the n
+                        # lines already seen; drop any partial line read before
+                        rest = list(iter_lines(d, n))
+                        chunk, buf = "".join(line + "\n" for line in rest), ""
                 buf += chunk
                 lines = buf.split("\n")
                 buf = lines.pop()                       # keep any partial line
@@ -435,10 +443,10 @@ def create_app(runs_dir: Path = DEFAULT_RUNS_DIR, port: int = 8765) -> FastAPI:
     def get_match(key: str):
         d = match_dir(key)
         summary = read_json(d / SUMMARY_FILE) if (d / SUMMARY_FILE).is_file() else None
-        first = _read_lines(d / EVENTS_FILE, 0, limit=1)
+        first = _read_lines(d, 0, limit=1)
         return {"key": key, "status": match_status(key, d), "summary": summary,
                 "match_start": first[0] if first else None,
-                "events": _count_lines(d / EVENTS_FILE)}
+                "events": _count_lines(d)}
 
     # -- MCP (LLM seats) ---------------------------------------------------------
     app.router.routes.extend(mcp_app.routes)        # POST/GET /mcp
@@ -491,22 +499,25 @@ def _winner(kind, data):
         and data.get("stopped") not in ("cancelled",) else None
 
 
-def _read_lines(path: Path, start: int = 0, limit: int = None) -> list:
+def _read_lines(match_dir: Path, start: int = 0, limit: int = None) -> list:
+    """Events of a match's log (plain or compressed) from line `start`."""
     out = []
-    if not path.is_file():
+    if not has_events(match_dir):
         return out
-    with open(path, encoding="utf-8") as fh:
-        for i, line in enumerate(fh):
-            if i < start or not line.endswith("\n"):
-                continue
+    try:
+        for line in iter_lines(match_dir, start):
             out.append(json.loads(line))
             if limit and len(out) >= limit:
                 break
+    except FileNotFoundError:
+        pass
     return out
 
 
-def _count_lines(path: Path) -> int:
-    if not path.is_file():
+def _count_lines(match_dir: Path) -> int:
+    if not has_events(match_dir):
         return 0
-    with open(path, encoding="utf-8") as fh:
-        return sum(1 for line in fh if line.endswith("\n"))
+    try:
+        return sum(1 for _ in iter_lines(match_dir))
+    except FileNotFoundError:
+        return 0

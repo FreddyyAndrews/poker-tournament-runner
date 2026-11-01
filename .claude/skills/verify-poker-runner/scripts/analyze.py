@@ -8,6 +8,7 @@ data/verify/<run_id>/analysis_<bot>_<match>.md (also printed). The report is wha
 an agent reads to decide how to change the bot: where the chips went, which
 decisions lost them, and the bot's own printed reasoning/debug for those spots.
 """
+import gzip
 import json
 import sys
 from collections import Counter, defaultdict
@@ -16,9 +17,16 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[4]
 
 
+def read_log(d):
+    gz = d / "events.jsonl.gz"
+    text = gzip.open(gz, "rt", encoding="utf-8").read() if gz.is_file() else \
+        (d / "events.jsonl").read_text()
+    return [json.loads(l) for l in text.splitlines() if l.strip()]
+
+
 def main(run_id, key, bot):
     evid = REPO / "data" / "verify" / run_id
-    events = [json.loads(l) for l in (evid / "runs" / key / "events.jsonl").read_text().splitlines() if l.strip()]
+    events = read_log(evid / "runs" / key)
     hands = defaultdict(lambda: {"decisions": [], "board": [], "delta": 0, "showdown": None})
     acts, by_street, errors, think = Counter(), defaultdict(Counter), Counter(), []
     for e in events:

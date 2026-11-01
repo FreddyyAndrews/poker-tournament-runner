@@ -14,7 +14,7 @@ import json
 import zipfile
 from pathlib import Path
 
-from arena.events import EVENTS_FILE, SUMMARY_FILE
+from arena.events import EVENTS_FILE, EVENTS_GZ, SUMMARY_FILE, iter_lines
 
 _PRIVATE_DECISION_FIELDS = ("state", "reply", "logs", "logs_truncated", "debug", "debug_error",
                             "error", "error_detail", "think_ms")
@@ -64,7 +64,13 @@ def export(run_dir, out_path, bot: str = None) -> dict:
             if not f.is_file() or f.name.endswith(".tmp"):
                 continue
             arc = str(Path(run_dir.name) / f.relative_to(run_dir))
-            if bot and f.name == EVENTS_FILE:
+            if f.name == EVENTS_GZ:
+                # exports always hold the plain log (the zip compresses it anyway)
+                arc = arc[:-len(".gz")]
+                lines = list(iter_lines(f.parent))
+                zf.writestr(arc, _filter_events(lines, bot) if bot else
+                            "".join(line + "\n" for line in lines))
+            elif bot and f.name == EVENTS_FILE:
                 zf.writestr(arc, _filter_events(f.read_text().splitlines(), bot))
             elif bot and f.name == SUMMARY_FILE:
                 zf.writestr(arc, _filter_summary(f.read_text(), bot))

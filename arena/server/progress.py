@@ -15,7 +15,7 @@ from pathlib import Path
 
 from arena import bots as botlib
 from arena import formats
-from arena.events import EVENTS_FILE, SUMMARY_FILE
+from arena.events import EVENTS_FILE, SUMMARY_FILE, has_events, iter_lines
 from arena.formats import bracket, round_robin
 from arena.server import status as status_rule
 from arena.seeds import derive_seed
@@ -214,13 +214,10 @@ def mtt_progress(run_dir: Path, run_id: str, active: bool = False) -> dict:
     tables, eliminations = [], []
     if tables_dir.is_dir():
         for d in sorted(tables_dir.iterdir(), key=lambda p: int(p.name[1:]) if p.name[1:].isdigit() else 0):
-            f = d / EVENTS_FILE
-            if not f.is_file():
+            if not has_events(d):
                 continue
             seats, closed, hand, blinds, level, button, ended = {}, False, None, None, None, None, None
-            for line in f.read_text().splitlines():
-                if not line.strip():
-                    continue
+            for line in iter_lines(d):
                 e = json.loads(line)
                 t = e["type"]
                 if t == "match_start":

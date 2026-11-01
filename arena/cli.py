@@ -3,6 +3,7 @@
 import argparse
 import json
 import sys
+import time
 from pathlib import Path
 
 from arena import bots as botlib
@@ -633,6 +634,36 @@ def cmd_play(args):
     _print_match(summary)
 
 
+def cmd_compress(args):
+    from arena import events
+    from arena.bench import BENCH_DIR
+    roots = [Path(r) for r in args.dirs] or \
+        [DEFAULT_RUNS_DIR, Path(BENCH_DIR) / "runs", DEFAULT_RUNS_DIR.parent / "verify"]
+    shown = [0.0]
+
+    def progress(out):
+        if not args.json and time.time() - shown[0] > 2:
+            shown[0] = time.time()
+            print(f"  {out['compressed']} logs, {out['before'] / 1e6:,.0f} MB -> "
+                  f"{out['after'] / 1e6:,.0f} MB so far", file=sys.stderr)
+
+    out = events.compress_all(roots, dry_run=args.dry_run, progress=progress)
+    out["dirs"] = [str(r) for r in roots]
+    if args.json:
+        _print_json(out)
+        return
+    verb = "Would compress" if args.dry_run else "Compressed"
+    print(f"{verb} {out['compressed']} match logs: {out['before'] / 1e6:,.1f} MB"
+          + ("" if args.dry_run else f" -> {out['after'] / 1e6:,.1f} MB"))
+    if out["skipped_live"]:
+        print(f"Skipped {out['skipped_live']} that may still be playing (no summary or match_end, "
+              f"written to in the last day).")
+    for err in out["errors"]:
+        print("error: " + err, file=sys.stderr)
+    if out["failed"]:
+        sys.exit(1)
+
+
 def cmd_proxy(args):
     from arena import proxy
     if args.status:
@@ -817,6 +848,18 @@ def build_parser():
     sv.add_argument("--out", default=str(DEFAULT_RUNS_DIR), help="results directory (default data/runs)")
     sv.add_argument("--open", action="store_true", help="open the UI in a browser")
     sv.set_defaults(func=cmd_serve)
+
+    cz = sub.add_parser("compress", help="gzip the logs of finished matches (new matches do this "
+                                         "themselves when they end)",
+                        description="Match logs are written plain while a match plays and gzipped "
+                                    "when it ends (about 20x smaller, nothing lost). This compresses "
+                                    "logs written before that, or left plain by POKER_COMPRESS_LOGS=0. "
+                                    "Logs that may still be playing are skipped.")
+    cz.add_argument("dirs", nargs="*", help="directories to search (default: data/runs, "
+                                            "data/bench/runs and data/verify)")
+    cz.add_argument("--dry-run", action="store_true", help="only report what would be compressed")
+    cz.add_argument("--json", action="store_true")
+    cz.set_defaults(func=cmd_compress)
 
     px = sub.add_parser("proxy", help="start the outside-bot proxy that every Slumbot and GTO Wizard "
                                       "call goes through (or show its status)",

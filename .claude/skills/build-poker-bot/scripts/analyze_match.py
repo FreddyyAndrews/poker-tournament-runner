@@ -10,6 +10,7 @@ errors/timeouts, think time, showdowns, and the biggest losing hands with the
 bot's own logs and debug for each decision.
 """
 import argparse
+import gzip
 import json
 import os
 import urllib.request
@@ -17,13 +18,25 @@ from collections import Counter, defaultdict
 from pathlib import Path
 
 
+def has_log(d):
+    """A match log, plain (while live) or gzipped (once finished)."""
+    return (d / "events.jsonl").is_file() or (d / "events.jsonl.gz").is_file()
+
+
+def read_log(d):
+    gz = d / "events.jsonl.gz"
+    text = gzip.open(gz, "rt", encoding="utf-8").read() if gz.is_file() else \
+        (d / "events.jsonl").read_text()
+    return [json.loads(l) for l in text.splitlines() if l.strip()]
+
+
 def find_match(ref, server):
     p = Path(ref).expanduser()
-    if (p / "events.jsonl").is_file():
+    if has_log(p):
         return p
     runs = json.load(urllib.request.urlopen(server.rstrip("/") + "/api/health"))["runs_dir"]
     p = Path(runs) / ref
-    if (p / "events.jsonl").is_file():
+    if has_log(p):
         return p
     raise SystemExit(f"no match log at {ref} or {p}")
 
@@ -35,7 +48,7 @@ def main():
     ap.add_argument("--server", default=os.environ.get("POKER_SERVER", "http://127.0.0.1:8765"))
     a = ap.parse_args()
     d = find_match(a.match, a.server)
-    events = [json.loads(l) for l in (d / "events.jsonl").read_text().splitlines() if l.strip()]
+    events = read_log(d)
     bot = a.bot
     hands = defaultdict(lambda: {"decisions": [], "board": [], "delta": 0, "showdown": None})
     acts, by_street, errors, think = Counter(), defaultdict(Counter), Counter(), []

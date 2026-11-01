@@ -5,7 +5,7 @@ description: Verify the Poker Tournament Runner end to end through its real surf
 
 # Verify the Poker Tournament Runner
 
-The app: a Python package (`arena/`, `engine/`, `sandbox/`) with a `poker` CLI, and `poker serve`, which serves an HTTP API, a React UI (built into `web/dist`) and an MCP endpoint at `/mcp`. Results land in a runs directory as event logs (`events.jsonl`) per match. Bots are folders in `my_bots/` or `bots/` with a `bot.py` exposing `decide(state)`.
+The app: a Python package (`arena/`, `engine/`, `sandbox/`) with a `poker` CLI, and `poker serve`, which serves an HTTP API, a React UI (built into `web/dist`) and an MCP endpoint at `/mcp`. Results land in a runs directory as event logs per match: `events.jsonl` while the match plays, gzipped to `events.jsonl.gz` when it ends (read them with `arena.events.read_events`). Bots are folders in `my_bots/` or `bots/` with a `bot.py` exposing `decide(state)`.
 
 Everything below runs from the repo root, `R=$(git rev-parse --show-toplevel)`, with helpers in `$R/.claude/skills/verify-poker-runner/scripts` (call it `$S`). Pick a run id per verification run: `RUN=$(date +%Y%m%d_%H%M%S)`.
 
@@ -51,7 +51,7 @@ Stable handles in the UI: `data-testid`s such as `format-table`, `add-<bot>`, `a
 
 All of it lives in `data/verify/$RUN/` (gitignored), and none of it is deleted by cleanup:
 
-- `runs/<match>/events.jsonl` + `summary.json`: the full logs of every match the run played, verifiable later with `poker verify`.
+- `runs/<match>/events.jsonl.gz` + `summary.json`: the full logs of every match the run played, verifiable later with `poker verify`.
 - `shots/*.png` + `shots/*.aria.txt`: the user action and the resulting state (form filled, then table, then inspector; your-turn bar, then after).
 - `watch.json`, `play.json`: what the drivers saw (position, inspector text, actions taken, match key, page errors).
 - `validate_<bot>.json`, `bench_*.json`, `analysis_*.md`, `server.log`, and after cleanup `bots/<name>/bot.py` (the final code) and `bench/` (bench history).

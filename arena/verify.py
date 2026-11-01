@@ -21,7 +21,7 @@ import json
 from collections import defaultdict, deque
 from pathlib import Path
 
-from arena.events import DEFAULT_RUNS_DIR, find_run, read_events
+from arena.events import DEFAULT_RUNS_DIR, find_run, has_events, read_events
 from arena.seats import Seat
 from arena.table import RUNTIME_STATS, MatchConfig, engine_hash, play_match
 
@@ -267,7 +267,7 @@ def verify_run_dir(run_dir) -> dict:
     for record in run["matches"]:
         mdir = run_dir / "matches" / record["match_id"]
         logged_ids.add(record["match_id"])
-        if not (mdir / "events.jsonl").is_file():
+        if not has_events(mdir):
             report["problems"].append(f"match {record['match_id']}: log missing")
             continue
         events = read_events(mdir)
