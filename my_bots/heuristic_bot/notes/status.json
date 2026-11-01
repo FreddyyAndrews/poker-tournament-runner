@@ -6,11 +6,26 @@
   "created": "2026-11-01T13:22:39",
   "forked_from": "fable_bot",
   "strategy": "Hand-written rules: equity against pot odds, position-aware ranges, sizing by street. Improves by changing its code.",
-  "trying_next": null,
-  "iterations": 0,
-  "kept": 0,
+  "trying_next": "find where it loses to fable_bot (analyze the fable_bot gauntlet matches by street)",
+  "iterations": 1,
+  "kept": 1,
   "reverted": 0,
-  "best": null,
-  "last_run": null,
-  "updated": "2026-11-01T13:22:39"
+  "best": {
+    "hash": "da2c09374cd2252a",
+    "at": "2026-11-01T13:26:53",
+    "gauntlet_bb": 124.77,
+    "gauntlet_ci": 26.83,
+    "gauntlet_hands": 2000
+  },
+  "last_run": {
+    "at": "2026-11-01T13:26:53",
+    "result": "kept",
+    "experiment": "baseline",
+    "summary": "Baseline gauntlet of the starting code (forked from fable_bot): +124.8 \u00b126.8 bb/100 overall at 2000 hands a leg. Crushes opus_bot (+356 \u00b167), slightly ahead of sonnet_bot (+26 \u00b128), about even with fable_bot (-8 \u00b135). Zero timeouts and errors.",
+    "hash": "da2c09374cd2252a",
+    "gauntlet_bb": 124.77,
+    "gauntlet_ci": 26.83,
+    "gauntlet_hands": 2000
+  },
+  "updated": "2026-11-01T13:26:53"
 }
