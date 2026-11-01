@@ -172,12 +172,13 @@ A champion is an exact copy of the bot's folder, named `<bot>_<first 6 hex of it
 
 ### Building bots with an agent
 
-The repo ships a Claude Code skill, [`.claude/skills/build-poker-bot`](.claude/skills/build-poker-bot/SKILL.md), that takes an agent from an empty folder to a pull request. Ask Claude Code to build a poker bot and it follows the skill:
+The repo ships a Claude Code skill, [`.claude/skills/build-poker-bot`](.claude/skills/build-poker-bot/SKILL.md), for agents that build bots. Start a chat, ask Claude Code to build a poker bot (say what kind), and keep talking to it as it works. You can run several at once, one bot per chat. The skill sets the agent up and points it to the tools, and the rest is a conversation:
 
-1. **Own worktree.** `setup.sh <name>` creates a git worktree `../poker-bot-<name>` on branch `bot/<name>` from `origin/main`, then scaffolds `my_bots/<name>/` from the template. Each agent works only in its own bot folder.
-2. **Shared server.** Run `poker serve` from the main checkout and leave it running. Every agent's matches run there, so you can watch them all live, and agents can play each other: the server finds bots in other worktrees' `my_bots/` by name. `poker bots` and the **New** page list those bots with their branch.
-3. **Refine.** The agent tests against the reference bots and other agents' bots, finds leaks with `analyze_match.py` (the biggest losing hands, with the bot's own logs and `debug`), and keeps a change only if `poker bench` improves beyond the confidence interval.
-4. **PR.** `pr_report.py` writes the metrics section: bench results per opponent with CIs, the version history, and tournament standings against the other agents. The agent opens a PR containing only `my_bots/<name>/`, with the strategy, the metrics, the commands to reproduce each number, and known weaknesses.
+- **Own worktree.** `setup.sh <name>` creates a git worktree `../poker-bot-<name>` on branch `bot/<name>` from `origin/main` and scaffolds `my_bots/<name>/` from the template. Each agent changes only its own bot folder.
+- **Shared server and proxy.** `poker serve` and `poker proxy` run from the main checkout. Every agent's matches run on the server, so you can watch them all live, and agents can play each other's bots by name. Slumbot and Jev go through the proxy, which shares their limits between everyone.
+- **Tools.** Matches and tournaments, `poker bench` against the reference bots, `--gauntlet` against the champions, Slumbot, and `analyze_match.py` for the hands a bot lost most. The skill lists them with what each measures.
+- **Rules.** Its own folder only, no secrets, no GTO Wizard, one Slumbot bench at a time, and the commit hooks always on.
+- **A pull request when you want one,** containing only `my_bots/<name>/`, with `pr_report.py`'s metrics and the commands behind each number.
 
 After the PR is merged, remove the worktree with `git worktree remove ../poker-bot-<name>`.
 
