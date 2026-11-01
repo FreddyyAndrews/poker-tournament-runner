@@ -1,6 +1,6 @@
 """Tests for the autonomous loop's scripts: the bot notes tool
-(.claude/skills/iterate-bot/scripts/notes.py) and the commissioner's pacing
-(.claude/skills/run-loop/scripts/commission.py)."""
+(.claude/skills/iterate-bot/scripts/notes.py) and the loop's checks, pacing and
+status page (.claude/skills/run-loop/scripts/loop_status.py)."""
 import calendar
 import importlib.util
 import json
@@ -20,7 +20,7 @@ def load(path, name):
 
 
 notes = load(".claude/skills/iterate-bot/scripts/notes.py", "loop_notes")
-commission = load(".claude/skills/run-loop/scripts/commission.py", "loop_commission")
+loop_status = load(".claude/skills/run-loop/scripts/loop_status.py", "loop_status")
 
 
 @pytest.fixture
@@ -78,10 +78,30 @@ def usage(weekly, five=10, resets_in_days=3.5, now=None):
 
 def test_pacing_spreads_the_week_and_keeps_a_reserve():
     now = calendar.timegm(time.gmtime())
-    half = commission.pace(usage(30, now=now), 0.2, now)       # half the week gone: 40% planned
+    half = loop_status.pace(usage(30, now=now), 0.2, now)       # half the week gone: 40% planned
     assert half["run"] and half["target"] == pytest.approx(40, abs=0.5)
-    ahead = commission.pace(usage(50, now=now), 0.2, now)
+    ahead = loop_status.pace(usage(50, now=now), 0.2, now)
     assert not ahead["run"] and "ahead of pace" in ahead["reason"]
-    hot = commission.pace(usage(10, five=95, now=now), 0.2, now)
+    hot = loop_status.pace(usage(10, five=95, now=now), 0.2, now)
     assert not hot["run"] and "5-hour" in hot["reason"]
-    assert commission.pace(None, 0.2, now)["run"]              # no data: no pacing
+    assert loop_status.pace(None, 0.2, now)["run"]              # no data: no pacing
+
+
+def test_status_page_shows_alerts_standings_and_links(monkeypatch):
+    monkeypatch.setattr(loop_status, "repo_url", lambda: "https://github.com/o/r")
+    d = {"generated": "2026-11-01 14:00", "services": {"server": True, "proxy": False},
+         "pace": {"run": False, "reason": "ahead of pace: 50% used"},
+         "alerts": ["The outside-bot proxy isn't answering."],
+         "tracks": [{"bot": "heur", "track": "heuristic", "phase": "iterating", "branch": "bot/heur",
+                     "best": {"gauntlet_bb": 12.34, "gauntlet_ci": 5.0}, "iterations": 4, "kept": 2,
+                     "hours_since_run": 1.5, "last_run": {"at": "2026-11-01T12:30:00", "result": "kept",
+                                                          "experiment": "fold rivers", "summary": "Better."},
+                     "strategy": "Rules.", "trying_next": "bluff more",
+                     "journal": [("2026-11-01T12:30:00", "kept", "fold rivers")]}],
+         "budgets": {"disk": {"data_gb": 0.4, "free_gb": 800}}, "champions": []}
+    md = loop_status.render(d, by="heur")
+    assert "Bot runs are **paused**: ahead of pace" in md and "proxy is **down**" in md
+    assert "- The outside-bot proxy isn't answering." in md
+    assert "| [heur](https://github.com/o/r/blob/bot/heur/my_bots/heur/notes/journal.md) | heuristic | iterating " \
+           "| +12.3 ± 5.0 | – | 4 | 2 | 1.5 h ago, kept |" in md
+    assert "**Trying next:** bluff more" in md and "| 2026-11-01 12:30 | heur | kept | fold rivers |" in md

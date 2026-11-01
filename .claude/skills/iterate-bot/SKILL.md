@@ -25,14 +25,16 @@ S=$MAIN/.claude/skills/build-poker-bot/scripts
 N() { "$PY" "$MAIN/.claude/skills/iterate-bot/scripts/notes.py" "$@"; }   # a function: zsh doesn't split variables
 B=my_bots/$NAME
 OUT=$MAIN/data/loop/runs; mkdir -p "$OUT"        # bench output (git ignores data/)
+STATUS() { "$PY" "$MAIN/.claude/skills/run-loop/scripts/loop_status.py" --usage "$MAIN/data/loop/usage.json" --publish --by "$NAME"; }
 ```
 
-1. **Pace.** If `$MAIN/data/loop/pace.json` exists and says `"run": false`, record a skip and stop:
-   `N record $B --result skipped --experiment "paced" --summary "<its reason>"`, then commit the notes (step 6) and end.
+1. **Check the loop and the pace.** Call the app's `get_usage` tool and save its full JSON result to `$MAIN/data/loop/usage.json` with the Write tool. (If the tool isn't available, delete any old copy of that file and go on: the run then isn't paced.) Then run `STATUS`. It checks the services, every track and the budgets, decides whether runs may go ahead, writes that to `$MAIN/data/loop/pace.json`, and updates the status page on GitHub (`STATUS.md` on the `loop-status` branch). Read its first line and any `ALERT:` lines:
+   - **Runs PAUSED** (ahead of the weekly pace, or the 5-hour window nearly full): stop now, without recording anything. The status page already says why.
+   - **The server or the proxy is down:** start it, as the build skill says, and go on. Never restart a running one.
+   - If the status page couldn't be pushed, go on and mention it in your summary.
 2. **Clean tree.** `git status --porcelain` must be empty. If a previous run left changes, it stopped mid-experiment: note what was left (`git status --short`), put the bot folder back to its last commit with `git restore -- $B && git clean -fdq -- $B`, record `--result error --experiment "recovered" --summary "<what was left>"`, and continue.
-3. **Services.** `curl -sf $POKER_SERVER/api/health` and `$POKER proxy --status`. Start either one if it is down, as the build skill says. Never restart a running one.
-4. **Sync.** `git fetch -q origin && git merge --no-edit origin/main`. On a conflict: `git merge --abort`, `N phase $B blocked --reason "merge conflict with main"`, commit the notes, stop.
-5. **Phase.** If the notes say `paused`, stop without recording. If `training`, follow the RL playbook's "while training" step instead of starting a new experiment.
+3. **Sync.** `git fetch -q origin && git merge --no-edit origin/main`. On a conflict: `git merge --abort`, `N phase $B blocked --reason "merge conflict with main"`, then commit, push and run `STATUS` as in step 6, and stop.
+4. **Phase.** If the notes say `paused`, stop without recording. If `training`, follow the RL playbook's "while training" step instead of starting a new experiment.
 
 ## 1. Orient
 
@@ -49,7 +51,7 @@ Then read the playbook for the bot's track, which sets what an experiment looks 
 | `jev_prompt` | `playbooks/jev_prompt.md` |
 | `jev_tools` | `playbooks/jev_tools.md` |
 
-If the notes have no `best` yet, this run establishes the baseline: run the playbook's every-run bench on the current code and record it with `--result kept --experiment "baseline"`. That is the whole run.
+If the notes have no `best` yet, this run establishes the baseline: run the playbook's every-run bench on the current code and record it with `--result kept --experiment "baseline"`, then commit, push and run `STATUS` as in step 6. That is the whole run.
 
 If `best` was measured at a different hand count than the playbook's every-run bench (or `show` says the count wasn't recorded), re-measure it now, before changing anything: bench the current code at the playbook's count, record it with `--result kept --experiment "rebaseline"`, and commit the notes on their own (`git add $B/notes && git commit -q -m "$NAME: rebaseline"`). Then carry on with this run's experiment, compared against that.
 
@@ -90,14 +92,16 @@ N record $B --result kept|reverted --experiment "<the hypothesis>" --summary "<w
    --next "<the most promising next idea>"
 N push $B "<any new idea worth trying>"          # at most two
 git add $B && git commit -q -m "$NAME: <experiment> (<kept|reverted>)"
+git push -q -u origin bot/$NAME                   # the bot's code and notes, on GitHub
+STATUS                                            # the status page, with this run in it
 ```
 
-The git hooks run on the commit. If one fixes a file, `git add` it and commit again. A reverted experiment still commits its notes, so the next run knows it was tried.
+The git hooks run on the commit. If one fixes a file, `git add` it and commit again. A reverted experiment still commits its notes, so the next run knows it was tried. The push only updates the bot's own branch (never main). If a push is refused, carry on and say so in your summary.
 
 ## 7. Checkpoints and milestones
 
 - **Outside check.** The playbook says how often to run the Slumbot bench on the best version (never for the Jev tracks unless their budget allows). Record it with `N record $B --result kept --experiment "slumbot checkpoint" --slumbot <bb> <ci> --hash <best hash> --summary "..."`.
-- **Beating the gauntlet.** When the best version beats every champion (each champion row positive with its CI clear of zero), push the branch and open or update the bot's PR as the build skill describes (`pr_report.py`, the PR body). One PR per bot, updated as it improves. Champions are the user's call: say in the PR that this version could become one, and don't add it yourself.
+- **Beating the gauntlet.** When the best version beats every champion (each champion row positive with its CI clear of zero), open or update the bot's PR as the build skill describes (`pr_report.py`, the PR body). One PR per bot, updated as it improves. Champions are the user's call: say in the PR that this version could become one, and don't add it yourself.
 - **Stuck.** After five reverted runs in a row, step back: re-read the journal, write three new kinds of hypothesis into the plan, and record that you did.
 
 ## 8. Finish

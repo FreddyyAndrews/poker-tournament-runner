@@ -1,18 +1,19 @@
 ---
 name: run-loop
-description: Operate the autonomous bot-building loop - start a bot track, schedule its iterations, run the commissioner (health, budgets, pacing, the Poker Bot Loop dashboard, alerts), and pause or stop tracks. Use when asked to start or launch a bot track, run or schedule the commissioner, refresh the loop dashboard, or check on the loop.
+description: Operate the autonomous bot-building loop - start a bot track and schedule its runs, read or refresh the loop's status page (STATUS.md on the loop-status branch), and pause, stop or promote tracks. Use when asked to start or launch a bot track, check on the loop, or refresh its status.
 ---
 
 # Run the bot loop
 
-The loop has four parts:
+Everything about the loop lives in the GitHub repo:
 
-| Part | What it is |
+| What | Where |
 |---|---|
-| **Tracks** | One bot each, in its own worktree `../poker-bot-<name>` on branch `bot/<name>`, with lab notes in `my_bots/<name>/notes/` |
-| **Iterations** | A scheduled task per track runs the `iterate-bot` skill: one experiment per run, in a fresh session |
-| **Commissioner** | A scheduled task every few hours: checks services, budgets and tracks, sets the pace, refreshes the dashboard, alerts the user |
-| **Dashboard** | "Poker Bot Loop", https://claude.ai/artifact/8AB4Am6B4oVwg5cJUZgZdH |
+| **Status page** | `STATUS.md` on the `loop-status` branch: https://github.com/FreddyyAndrews/poker-tournament-runner/blob/loop-status/STATUS.md |
+| **Each bot** | its branch `bot/<name>`: the code in `my_bots/<name>/`, and its lab notes in `my_bots/<name>/notes/` (`journal.md`, `plan.md`, `status.json`) |
+| **A bot that beat the gauntlet** | its pull request |
+
+On this machine, each bot track is a worktree `../poker-bot-<name>`, and one scheduled task per track runs the `iterate-bot` skill every few hours. There is no separate supervisor: every run starts by checking the loop (services, budgets, every track, the Claude usage pace), updates the status page, and only then does its experiment, if the pace allows.
 
 `MAIN` below is the main checkout (`/Users/frederickandrews/git/poker/poker-tournament-runner`), `PY=$MAIN/.venv/bin/python`.
 
@@ -22,9 +23,9 @@ The loop has four parts:
 $MAIN/.claude/skills/run-loop/scripts/start_track.sh <name> <track> [--from <bot>] [--strategy "..."]
 ```
 
-`<track>` is `heuristic`, `rl`, `jev_prompt` or `jev_tools`. `--from` forks an existing bot (from `my_bots/`, `bots/` or `champions/`) instead of the template. The script creates the worktree and branch, renames the bot, starts its notes with a few first ideas for its track, and commits. Its first iteration records the baseline.
+`<track>` is `heuristic`, `rl`, `jev_prompt` or `jev_tools`. `--from` forks an existing bot (from `my_bots/`, `bots/` or `champions/`) instead of the template. The script creates the worktree and branch, renames the bot, starts its notes with a few first ideas for its track, and commits. Its first run records the baseline and pushes the branch.
 
-Then schedule its iterations. Scheduled tasks are standing automation: create one only when the user has said to, for that track. Stagger the tracks so their benches don't overlap:
+Then schedule its runs. A scheduled task is standing automation: create one only when the user has said to, for that track. Stagger the tracks so their benches don't overlap:
 
 | Track | Suggested schedule |
 |---|---|
@@ -35,46 +36,40 @@ Then schedule its iterations. Scheduled tasks are standing automation: create on
 
 The task's prompt (fill in `<name>`):
 
-> Run one iteration of the `iterate-bot` skill on the bot track `<name>`. The main checkout is /Users/frederickandrews/git/poker/poker-tournament-runner and the bot's worktree is /Users/frederickandrews/git/poker/poker-bot-<name>. Follow the skill exactly, for one run only. Never read the repo's .env file, never play GTO Wizard, and don't push or open a PR unless the skill's milestone step says so. End with a one-line summary.
+> Run one iteration of the `iterate-bot` skill on the bot track `<name>` (read /Users/frederickandrews/git/poker/poker-tournament-runner/.claude/skills/iterate-bot/SKILL.md first and follow it exactly, for one run only). The main checkout (MAIN) is /Users/frederickandrews/git/poker/poker-tournament-runner and the bot's worktree is /Users/frederickandrews/git/poker/poker-bot-<name>. Never read the repo's .env file, never play GTO Wizard, and don't open a PR unless the skill's milestone step says so. End with a one-line summary.
 
-## The commissioner
+## The status page
 
-Schedule it every 3 hours (`45 */3 * * *`) with this prompt:
+`scripts/loop_status.py` builds it. Each run calls it at the start (with fresh Claude usage, to decide whether to run) and at the end (to report the run):
 
-> Run the `run-loop` skill's commissioner steps for the poker bot loop at /Users/frederickandrews/git/poker/poker-tournament-runner. Never read the repo's .env file.
+```bash
+$PY $MAIN/.claude/skills/run-loop/scripts/loop_status.py --usage $MAIN/data/loop/usage.json --publish --by <bot>
+```
 
-Its steps, each run:
+It checks the central server and the outside-bot proxy, every track's notes, Slumbot hands, Jev spend and disk use, and writes:
 
-1. **Usage.** Call the app's `get_usage` tool and save its full JSON result to `$MAIN/data/loop/usage.json` (with the Write tool). If the tool isn't available, skip this; pacing then stays off.
-2. **Checks.** `cd $MAIN && $PY .claude/skills/run-loop/scripts/commission.py --usage data/loop/usage.json`. It prints a short report and `ALERT:` lines, writes `data/loop/pace.json` (which every iteration reads before it starts) and the dashboard's row files in `data/loop/dash/`.
-3. **Dashboard.** For each of `status`, `tracks`, `budgets`, `alerts` and `champions`:
-   - read `datasets/<id>` with ArtifactData (`get`) on the dashboard URL, for its current file `url` and `version`;
-   - upload `data/loop/dash/<id>.json` as an asset of the dashboard (Artifact `publish` with `url`, `file_path`, `asset: true`; one file per call);
-   - `update` `datasets/<id>` (with `if_version`) to the new `source.url`, `source.name` and `updated: {at: <now, ISO>, by: "poker loop commissioner"}`;
-   - delete the old asset (Artifact `delete` with `url` and `path`: the old blob id).
+- `data/loop/pace.json`: whether runs may go ahead now (below);
+- `STATUS.md`: alerts, standings, what each bot is doing with links to its notes, recent runs, budgets and champions. With `--publish` it is committed to the `loop-status` branch (which holds only that file, in the worktree `../poker-loop-status`) and pushed. A lock keeps two runs from publishing at once;
+- `ALERT:` lines for anything that needs the user, also listed at the top of the page: a service down, a track blocked, stalled or erroring, a budget near its limit, the disk filling up.
 
-   If those tools aren't available, say so in the summary and skip this step.
-4. **Alerts.** If the report has `ALERT:` lines, send one push notification (PushNotification, under 200 characters) naming the most important one and how many there are. Don't notify when there are none.
-5. **Finish** with a one-line summary: tracks, best score, pace, alerts.
-
-The commissioner never changes a bot, a track's code or a setting. It may start the central server or the outside-bot proxy if one is down, as the build skill says, and never restarts a running one.
+To refresh the page by hand, run it without `--usage` (no pacing) or with a fresh `usage.json` from the app's `get_usage` tool.
 
 ## Pacing
 
-`commission.py` spreads the weekly Claude limit over the week and keeps `--reserve` (default 20%) for the user's own work. When usage is ahead of that line, or the 5-hour window is 90% used, it writes `"run": false` to `data/loop/pace.json`, and each iteration records a skip and stops. Iterations that hit a hard usage limit wait for it to reset (`autoContinueAtUsageLimit` in the user's settings).
+The weekly Claude limit is spread over the week, keeping `--reserve` (default 20%) for the user's own work. When usage is ahead of that line, or the 5-hour window is 90% used, `pace.json` says `"run": false` and the run stops before its experiment, recording nothing; the status page says why. A run that hits a hard usage limit waits for it to reset (`autoContinueAtUsageLimit` in the user's settings).
 
 ## Pause, stop, promote
 
 - **Pause one track:** `$PY $MAIN/.claude/skills/iterate-bot/scripts/notes.py phase $MAIN/../poker-bot-<name>/my_bots/<name> paused --reason "..."`, or disable its scheduled task. `iterating` resumes it.
 - **Pause everything:** disable the scheduled tasks.
-- **Remove a track** only when the user says so: disable and delete its task, then `git worktree remove ../poker-bot-<name>` and `git branch -D bot/<name>` (or keep the branch if its PR matters).
-- **Champions** are the user's call. When a track's PR says its bot beat the gauntlet and the user agrees: `poker champions add <bot> --note "..."`, from the main checkout after the PR is merged.
+- **Remove a track** only when the user says so: disable and delete its task, then `git worktree remove ../poker-bot-<name>`, and delete the branch only if the user wants its history gone.
+- **Champions** are the user's call. When a bot's PR says it beat the gauntlet and the user agrees: `poker champions add <bot> --note "..."`, from the main checkout after the PR is merged.
 
-## Budgets and knobs
+## Knobs
 
 | Knob | Where |
 |---|---|
-| Claude reserve for the user | `commission.py --reserve` (default 0.2) |
-| How stale a track may get before an alert | `commission.py --stale-hours` (default 6) |
+| Claude reserve for the user | `loop_status.py --reserve` (default 0.2) |
+| How stale a track may get before an alert | `loop_status.py --stale-hours` (default 6) |
 | Slumbot caps, Jev budget and price | the proxy's settings in `.env` (README, "The outside-bot proxy"); the user edits them |
-| Iteration cadence | each track's scheduled task |
+| How often a track runs | its scheduled task |

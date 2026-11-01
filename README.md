@@ -186,7 +186,9 @@ After the PR is merged, remove the worktree with `git worktree remove ../poker-b
 Two more skills run bot development as a loop that goes on while you do other things:
 
 - [`.claude/skills/iterate-bot`](.claude/skills/iterate-bot/SKILL.md) is one experiment per run on one bot: read its lab notes, pick a hypothesis, change one thing, bench it against the champion gauntlet, keep it or revert it, record it and commit. Its playbooks cover four kinds of bot: a hand-written heuristic bot, a bot trained by self-play, and two bots that ask the Jev model for decisions.
-- [`.claude/skills/run-loop`](.claude/skills/run-loop/SKILL.md) operates the loop: `start_track.sh` starts a bot track in its own worktree, a scheduled task per track runs its iterations, and a commissioner task checks services and budgets, paces the runs against your Claude usage, refreshes the "Poker Bot Loop" dashboard and alerts you only when something needs attention.
+- [`.claude/skills/run-loop`](.claude/skills/run-loop/SKILL.md) operates the loop: `start_track.sh` starts a bot track in its own worktree, and a scheduled task per track runs its iterations. Every run first checks the loop (services, budgets, every track) and paces itself against your Claude usage, keeping a share of the week for your own work.
+
+Everything you need to follow it is on GitHub: [`STATUS.md` on the `loop-status` branch](https://github.com/FreddyyAndrews/poker-tournament-runner/blob/loop-status/STATUS.md) (alerts, standings, what each bot is doing, recent runs, budgets), each bot's branch `bot/<name>` with its lab notes, and a pull request once a bot beats the champion gauntlet.
 
 Each bot's notes live in `my_bots/<name>/notes/` (a journal, a plan of ideas, and a status file), which is left out of the bot's code hash, so writing notes never makes a new bot version.
 
