@@ -1,0 +1,16 @@
+{
+  "bot": "heuristic_bot",
+  "track": "heuristic",
+  "phase": "iterating",
+  "blocked_reason": null,
+  "created": "2026-11-01T13:22:39",
+  "forked_from": "fable_bot",
+  "strategy": "Hand-written rules: equity against pot odds, position-aware ranges, sizing by street. Improves by changing its code.",
+  "trying_next": null,
+  "iterations": 0,
+  "kept": 0,
+  "reverted": 0,
+  "best": null,
+  "last_run": null,
+  "updated": "2026-11-01T13:22:39"
+}
