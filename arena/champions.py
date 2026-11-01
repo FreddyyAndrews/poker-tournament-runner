@@ -85,7 +85,12 @@ def add(spec: str, note: str = "") -> dict:
         raise ValueError(f"{spec} fails the validator, so it can't be a champion (champions must run "
                          f"in the sandbox, with no network): {errors[0]}")
     dest = CHAMPIONS_DIR / name
-    shutil.copytree(src, dest, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+    def skip(folder, names):
+        """Not part of the bot: compiled files anywhere, and the top-level notes/."""
+        top = Path(folder) == src
+        return [n for n in names if n == "__pycache__" or n.endswith(".pyc") or (top and n == botlib.NOTES_DIR)]
+
+    shutil.copytree(src, dest, ignore=skip)
     copied = botlib.bot_hash(str(dest))
     if copied != bot.hash:
         shutil.rmtree(dest)

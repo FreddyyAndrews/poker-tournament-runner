@@ -93,3 +93,20 @@ def test_bench_gauntlet_errors(gauntlet, tmp_path):
     champions.add("beta")
     with pytest.raises(ValueError, match="leave out --opponents"):
         bench("alpha", opponents=["shark"], hands=10, gauntlet=True, bench_dir=tmp_path / "bench")
+
+
+def test_notes_are_not_part_of_the_bot(gauntlet):
+    (before,) = botlib.resolve_all(["alpha"])
+    notes = gauntlet["my_bots"] / "alpha" / "notes"
+    notes.mkdir()
+    (notes / "journal.md").write_text("tried a thing\n")
+    (after,) = botlib.resolve_all(["alpha"])
+    assert after.hash == before.hash                      # writing notes isn't a new version
+    data = gauntlet["my_bots"] / "alpha" / "data"
+    data.mkdir()
+    (data / "notes").write_text("a data file that happens to be called notes")
+    (changed,) = botlib.resolve_all(["alpha"])
+    assert changed.hash != before.hash                     # only the top-level notes/ is left out
+    e = champions.add("alpha")
+    assert not (gauntlet["champions"] / e["name"] / "notes").exists()
+    assert (gauntlet["champions"] / e["name"] / "data" / "notes").is_file()
