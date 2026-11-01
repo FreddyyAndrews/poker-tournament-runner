@@ -238,7 +238,6 @@ def test_tracker_all_in_and_runout(tmp_path):
 @pytest.fixture
 def jobs(tmp_path, monkeypatch):
     from arena.server.jobs import JobManager
-    monkeypatch.setenv("GTO_WIZARD_API_KEY", "test-key")
     # real bots don't play like the recording, so take its answers regardless
     monkeypatch.setattr(gtow, "Client", lambda: FakeClient(strict=False))
     return JobManager(tmp_path)
@@ -276,11 +275,19 @@ def test_server_refuses_what_gto_wizard_cant_play(jobs, p, match):
         jobs.start_match(p)
 
 
-def test_server_refuses_without_a_key(jobs, monkeypatch):
-    monkeypatch.delenv("GTO_WIZARD_API_KEY")
-    monkeypatch.setattr(external, "REPO_ENV", Path("/nonexistent/.env"))
-    with pytest.raises(ValueError, match="GTO_WIZARD_API_KEY"):
+def test_server_refuses_when_the_proxy_says_no(jobs, proxy_state):
+    why = "GTO Wizard benchmarking is turned off: ALLOW_GTO_WIZARD_BENCHMARKING is not true"
+    proxy_state["upstreams"]["gto_wizard"].update(allowed=False, why=why)
+    with pytest.raises(ValueError, match="ALLOW_GTO_WIZARD_BENCHMARKING"):
         jobs.start_match({"bots": ["shark", "gto_wizard"]})
+
+
+def test_server_refuses_when_no_proxy_is_running(jobs, monkeypatch):
+    def down():
+        raise external.ExternalError("the outside-bot proxy isn't running at http://127.0.0.1:8766")
+    monkeypatch.setattr(external, "proxy_status", down)
+    with pytest.raises(ValueError, match="proxy isn't running"):
+        jobs.start_match({"bots": ["shark", "slumbot"]})
 
 
 def test_cli_refuses_flags_that_change_the_game(capsys):
@@ -293,16 +300,16 @@ def test_cli_refuses_flags_that_change_the_game(capsys):
     assert "only applies to matches against gto_wizard" in capsys.readouterr().err
 
 
-def test_api_lists_external_bots_and_whether_they_can_play(tmp_path, monkeypatch):
+def test_api_lists_external_bots_and_whether_they_can_play(tmp_path, proxy_state):
     from fastapi.testclient import TestClient
     from arena.server import create_app
-    monkeypatch.setattr(external, "REPO_ENV", Path("/nonexistent/.env"))
-    monkeypatch.delenv("GTO_WIZARD_API_KEY", raising=False)
+    gtow_status = proxy_state["upstreams"]["gto_wizard"]
+    gtow_status.update(allowed=False, why="GTO Wizard benchmarking is turned off")
     with TestClient(create_app(tmp_path)) as c:
         bots = {b["name"]: b for b in c.get("/api/external").json()}
-        assert bots["gto_wizard"]["configured"] is False and "GTO_WIZARD_API_KEY" in bots["gto_wizard"]["why"]
-        assert bots["slumbot"]["configured"] is True          # no key needed
-        monkeypatch.setenv("GTO_WIZARD_API_KEY", "k")
+        assert bots["gto_wizard"]["configured"] is False and "turned off" in bots["gto_wizard"]["why"]
+        assert bots["slumbot"]["configured"] is True
+        gtow_status.update(allowed=True, why=None)            # the owner turns it on
         bots = {b["name"]: b for b in c.get("/api/external").json()}
     assert bots["gto_wizard"]["configured"] is True
     assert (bots["slumbot"]["max_workers"], bots["slumbot"]["score_kind"]) == (3, "baseline")

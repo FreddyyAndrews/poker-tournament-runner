@@ -43,7 +43,6 @@ from arena.table import MATCH_LOG_MAX_ENTRIES, MatchConfig, bot_result, diagnost
 STARTING_STACK, SB, BB = 20_000, 50, 100
 BOARD_LEN = {"preflop": 0, "flop": 3, "turn": 4, "river": 5}
 STREETS = ("preflop", "flop", "turn", "river")
-REPO_ENV = Path(__file__).resolve().parent.parent / ".env"
 USAGE_FILE = Path(os.environ.get("POKER_EXTERNAL_USAGE",
                                  Path(__file__).resolve().parent.parent / "data" / "external" / "usage.jsonl"))
 _usage_lock = threading.Lock()
@@ -53,15 +52,46 @@ class ExternalError(Exception):
     pass
 
 
-def env_value(name: str):
-    """A setting from the environment, or from the repo's .env."""
-    value = os.environ.get(name)
-    if not value and REPO_ENV.is_file():
-        for line in REPO_ENV.read_text().splitlines():
-            key, _, v = line.partition("=")
-            if key.strip() == name:
-                value = v.strip().strip("'\"")
-    return value or None
+# The outside-bot proxy (arena/proxy.py, `poker proxy`): every call to an
+# outside bot goes through it. It holds the API key and Slumbot account (this
+# process never reads the repo's secrets file), turns each bot on or off, and
+# queues requests so every process shares one limit. A request may wait there
+# while others play, hence the long client timeout.
+PROXY_URL = os.environ.get("POKER_PROXY_URL", "http://127.0.0.1:8766").rstrip("/")
+PROXY_WAIT_S = 1800
+
+
+def proxy_status() -> dict:
+    """The proxy's /status. Raises ExternalError when it isn't running."""
+    from arena import proxy
+    try:
+        return proxy.fetch_status(PROXY_URL)
+    except (OSError, ValueError) as e:
+        raise ExternalError(f"the outside-bot proxy isn't running at {PROXY_URL} ({e}). Start it "
+                            "with `poker proxy`: it holds the API keys and shares Slumbot and GTO "
+                            "Wizard fairly between everyone.") from None
+
+
+def check_proxy(name: str) -> dict:
+    """Raise ExternalError unless the proxy will forward to `name` now; returns its status."""
+    status = proxy_status()["upstreams"][name]
+    if not status["allowed"]:
+        raise ExternalError(status["why"])
+    return status
+
+
+def http_error_detail(raw: str) -> str:
+    """The message in an error body (the proxy's or the API's error_msg or
+    detail) when it is JSON, else the raw text."""
+    try:
+        body = json.loads(raw)
+    except ValueError:
+        return raw
+    if isinstance(body, dict):
+        msg = body.get("error_msg") or body.get("detail")
+        if isinstance(msg, str):
+            return msg
+    return raw
 
 
 @dataclass
@@ -560,7 +590,9 @@ def run_external_match(opponent: Opponent, bot_spec, hands: int, match_id: str =
     `opponent` and write the event log + summary. workers: hands at a time
     (default: see default_workers). Returns the summary."""
     config = config_for(hands, time_limit_ms)
-    backend = backend or opponent.backend()
+    if backend is None:
+        opponent.check_configured()
+        backend = opponent.backend()
     prefix = {"gto_wizard": "gtow"}.get(opponent.name, opponent.name)
     match_id = match_id or f"{prefix}_{time.strftime('%Y%m%d_%H%M%S')}_{os.urandom(2).hex()}"
     run_dir = Path(runs_dir) / match_id

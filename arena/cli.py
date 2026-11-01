@@ -633,6 +633,23 @@ def cmd_play(args):
     _print_match(summary)
 
 
+def cmd_proxy(args):
+    from arena import proxy
+    if args.status:
+        url = args.url or f"http://{proxy.HOST}:{args.port}"
+        try:
+            status = proxy.fetch_status(url)
+        except (OSError, ValueError) as e:
+            _fail(f"no outside-bot proxy at {url} ({e}). Start one with `poker proxy`.", args.json)
+        if args.json:
+            _print_json(status)
+        else:
+            print(f"Outside-bot proxy at {url}, up since {status['started']}")
+            print(proxy.describe(status))
+        return
+    proxy.serve(port=args.port)
+
+
 def cmd_serve(args):
     import uvicorn
     from arena.server import create_app
@@ -800,6 +817,21 @@ def build_parser():
     sv.add_argument("--out", default=str(DEFAULT_RUNS_DIR), help="results directory (default data/runs)")
     sv.add_argument("--open", action="store_true", help="open the UI in a browser")
     sv.set_defaults(func=cmd_serve)
+
+    px = sub.add_parser("proxy", help="start the outside-bot proxy that every Slumbot and GTO Wizard "
+                                      "call goes through (or show its status)",
+                        description="Every match against slumbot or gto_wizard goes through this "
+                                    "local proxy. It holds the API key and Slumbot account, turns "
+                                    "each bot on or off (ALLOW_SLUMBOT_BENCHMARKING, "
+                                    "ALLOW_GTO_WIZARD_BENCHMARKING in the repo's secrets file), and "
+                                    "queues requests so every process shares one limit. See "
+                                    "arena/proxy.py for the settings.")
+    px.add_argument("--port", type=int, default=8766)
+    px.add_argument("--status", action="store_true", help="show a running proxy's switches, queue "
+                                                          "and today's hands, then exit")
+    px.add_argument("--url", help="with --status: the proxy's URL (default http://127.0.0.1:PORT)")
+    px.add_argument("--json", action="store_true")
+    px.set_defaults(func=cmd_proxy)
 
     b = sub.add_parser("bots", help="list available bots")
     b.add_argument("--json", action="store_true")

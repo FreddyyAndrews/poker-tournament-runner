@@ -96,6 +96,7 @@ poker export <run-id> --bot shark                 # zip of results for one parti
 ### Playing GTO Wizard and Slumbot
 
 ```bash
+poker proxy                                            # once, and leave it running (see below)
 poker match my_bots/mybot slumbot --hands 1000        # heads-up against Slumbot (free, no key)
 poker match my_bots/mybot gto_wizard --hands 500      # heads-up against GTO Wizard AI
 poker match human:Me gto_wizard --hands 20 --pace 600  # or play one yourself in the browser
@@ -106,14 +107,34 @@ Two strong outside bots can be played through their own APIs, as `slumbot` or `g
 | | [Slumbot](https://slumbot.com) | [GTO Wizard AI](https://gtowizard.com/benchmark) |
 |---|---|---|
 | Access | Free public API, no key | API key in `.env` as `GTO_WIZARD_API_KEY=...` |
-| Limits | A free service run by one person: at most 3 hands at once (default 2) | About 100,000 hands a month per key; up to 20 at once (default 5) |
+| Switched on by | `ALLOW_SLUMBOT_BENCHMARKING` (default on) | `ALLOW_GTO_WIZARD_BENCHMARKING=true` (default off) |
+| Limits | A free service run by one person: at most 3 hands at once per match (default 2) | About 100,000 hands a month per key; up to 20 at once (default 5) |
 | Luck-adjusted score | Baseline: your result minus what Slumbot won with your cards against itself | AIVAT |
+
+**The outside-bot proxy.** Every call to either bot goes through `poker proxy`, a small local service on `127.0.0.1:8766`. Start it once and leave it running next to `poker serve`; matches against an outside bot refuse to start without it, and `poker proxy --status` shows how it's doing. It exists so that many bots, and the agents building them, can share the outside bots safely:
+
+- **It is the only process that reads `.env`.** The API key and Slumbot account stay in the proxy, so the processes that play matches never see them.
+- **It switches each bot on or off** from `ALLOW_SLUMBOT_BENCHMARKING` and `ALLOW_GTO_WIZARD_BENCHMARKING` in `.env`. It re-reads them on every request, so a change applies at once. These two switches are read from `.env` only, never from the environment.
+- **It queues requests** first come, first served, under one cap on requests in flight across every process. Over the cap, matches just run slower.
+- **It caps the hands per day** across every bot, and keeps the count in `data/external/proxy_usage.json` so it survives a restart.
+- **It forwards only the calls a match makes.** Its own refusals say why.
+
+| Setting in `.env` | Default | What it does |
+|---|---|---|
+| `ALLOW_SLUMBOT_BENCHMARKING` | `true` | Slumbot on or off |
+| `ALLOW_GTO_WIZARD_BENCHMARKING` | `false` | GTO Wizard on or off |
+| `SLUMBOT_PROXY_MAX_IN_FLIGHT` | 3 | Slumbot requests in flight at once, across everyone |
+| `SLUMBOT_PROXY_DAILY_HANDS` | 20,000 | Slumbot hands per day, across everyone |
+| `GTO_WIZARD_PROXY_MAX_IN_FLIGHT` | 20 | GTO Wizard requests in flight at once |
+| `GTO_WIZARD_PROXY_DAILY_HANDS` | 5,000 | GTO Wizard hands per day, across everyone |
+| `GTO_WIZARD_DAILY_HANDS_PER_BOT` | 5,000 | GTO Wizard hands per day for one bot |
+| `POKER_PROXY_URL` (environment) | `http://127.0.0.1:8766` | Where matches find the proxy |
 
 - **The game is fixed:** heads-up, 200bb stacks at 50/100, reset every hand (like `--cash`). `--freezeout`, `--blinds`, `--stack` and `--seed` are refused.
 - **They deal**, on their own server: you see your cards, the board and the action, and theirs when the hand ends. The match is logged like any other (live view, replay, analysis), but there is no seed, so it can't be replayed or duplicated. `poker verify` checks only the chip accounting.
 - **Judge by the luck-adjusted score, not chips.** Each hand's score is in the log (`hand_end.score`, with their cards in `hand_end.opp_hole`). The CLI prints luck-adjusted bb/100 with a 95% CI, and the standings show it as a column.
 - **Speed:** about 1 s per hand one at a time. `--workers N` plays N hands at once. It falls back to 1 with `--pace` or a human/LLM seat. With several at once, `match_action_log` holds the hands already finished.
-- **Slumbot account (optional):** set `SLUMBOT_USERNAME` and `SLUMBOT_PASSWORD` in `.env` to play under your slumbot.com account; otherwise sessions are anonymous.
+- **Slumbot account (optional):** set `SLUMBOT_USERNAME` and `SLUMBOT_PASSWORD` in `.env` to play under your slumbot.com account; otherwise sessions are anonymous. The proxy logs in for you.
 - An LLM can play them too: `start_match(opponents=["slumbot"])` over MCP.
 
 ### Is my bot improving?
@@ -125,7 +146,7 @@ poker bench my_bots/mybot --opponents shark aggressor --hands 2000 --workers 4
 
 `poker bench` plays a duplicate cash match against each opponent with **fixed seeds**, so every version of your bot faces exactly the same cards. It reports bb/100 per opponent with a 95% confidence interval, plus the average, and appends the result to `data/bench/<bot>.jsonl` with the bot's code hash, showing how the score changed since the last version. If the confidence intervals overlap, the change may just be noise: add hands.
 
-**Against Slumbot and GTO Wizard:** add them as opponents, e.g. `poker bench my_bots/mybot --opponents shark slumbot gto_wizard`. They deal on their own servers, so there are no fixed seeds: each plays 2 x `--hands` hands, scored by their luck-adjusted bb/100 (with raw chips alongside). Slumbot is free, so use it while iterating. Save GTO Wizard for a final check, because its quota is shared: each bot may play at most 5,000 hands a day against it (`GTO_WIZARD_DAILY_HANDS_PER_BOT` changes this). Every hand played against either is logged in `data/external/usage.jsonl`.
+**Against Slumbot and GTO Wizard:** add them as opponents, e.g. `poker bench my_bots/mybot --opponents shark slumbot gto_wizard`. They deal on their own servers, so there are no fixed seeds: each plays 2 x `--hands` hands, scored by their luck-adjusted bb/100 (with raw chips alongside). Slumbot is free, so use it while iterating. Save GTO Wizard for a final check, because its quota is shared: it is off until you set `ALLOW_GTO_WIZARD_BENCHMARKING=true`, and each bot may play at most 5,000 hands a day against it (`GTO_WIZARD_DAILY_HANDS_PER_BOT` changes this). Every hand played against either is logged in `data/external/usage.jsonl`.
 
 ### Building bots with an agent
 

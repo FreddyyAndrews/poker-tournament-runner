@@ -8,6 +8,11 @@ applied: positions, our cards, the board, the action history ("f", "k", "c",
 chips won, the AIVAT score and GTO Wizard's cards. It needs an API key
 (GTO_WIZARD_API_KEY) and allows about 100,000 hands a month and 20 hands at
 once per key.
+
+Every call goes through the outside-bot proxy (arena/proxy.py), which holds
+the key, refuses everything unless the owner turned GTO Wizard on
+(ALLOW_GTO_WIZARD_BENCHMARKING), and caps the hands in play and per day
+across every process. This process never sees the key.
 """
 
 import json
@@ -17,10 +22,10 @@ import urllib.error
 import urllib.request
 
 import arena
-from arena import external
+from arena import external, proxy
 from arena.external import BB, SB, STARTING_STACK, ExternalError, View
 
-API_URL = os.environ.get("GTO_WIZARD_API_URL", "https://researcher.gtowizard.com")
+API_URL = external.PROXY_URL + "/gtow"     # GTO Wizard's API, through the proxy
 GAME_NAME = "HUNL 200BB"
 NAME = "gto_wizard"                 # GTO Wizard's name in our logs
 API_NAME = "GTO Wizard"             # ... and in the API's player list
@@ -28,29 +33,22 @@ DEFAULT_WORKERS = 5                 # hands in play at once (as GTO Wizard's own
 MAX_WORKERS = 20                    # GTO Wizard's limit
 # Hands one bot may play against GTO Wizard per day. The key's ~100k hands a
 # month are shared by every bot (and agent) using it.
-DAILY_CAP_SETTING = "GTO_WIZARD_DAILY_HANDS_PER_BOT"
-DEFAULT_DAILY_CAP = 5000
+DAILY_CAP_SETTING = proxy.GTOW_DAILY_PER_BOT_SETTING
+DEFAULT_DAILY_CAP = proxy.GTOW_DAILY_PER_BOT_DEFAULT
 
 
 class GTOWizardError(ExternalError):
     pass
 
 
-def api_key() -> str:
-    """GTO_WIZARD_API_KEY from the environment, or from the repo's .env."""
-    key = external.env_value("GTO_WIZARD_API_KEY")
-    if not key:
-        raise GTOWizardError("GTO_WIZARD_API_KEY is not set (in the environment or .env)")
-    return key
-
-
 class Client:
-    """The few API calls we need, with retries on rate limits and server errors."""
+    """The few API calls we need, through the proxy (which adds the key), with
+    retries on rate limits and server errors. The timeout is long because
+    the proxy may queue a request while other bots play."""
 
     RETRY_STATUS = (429, 500, 502, 503, 504)
 
-    def __init__(self, key: str = None, url: str = API_URL, retries: int = 5, timeout_s: float = 30):
-        self.key = key or api_key()
+    def __init__(self, url: str = API_URL, retries: int = 5, timeout_s: float = external.PROXY_WAIT_S):
         self.url = url.rstrip("/")
         self.retries = retries
         self.timeout_s = timeout_s
@@ -58,7 +56,7 @@ class Client:
     def _request(self, method, path, body=None):
         data = json.dumps(body).encode() if body is not None else None
         # the API rejects urllib's default User-Agent with a 403
-        headers = {"X-API-Key": self.key, "Content-Type": "application/json",
+        headers = {"Content-Type": "application/json",
                    "User-Agent": f"poker-tournament-runner/{arena.__version__}"}
         for attempt in range(self.retries + 1):
             req = urllib.request.Request(self.url + path, data=data, method=method, headers=headers)
@@ -66,7 +64,7 @@ class Client:
                 with urllib.request.urlopen(req, timeout=self.timeout_s) as r:
                     return json.loads(r.read())
             except urllib.error.HTTPError as e:
-                detail = e.read().decode(errors="replace")[:500]
+                detail = external.http_error_detail(e.read().decode(errors="replace")[:500])
                 if e.code not in self.RETRY_STATUS or attempt == self.retries:
                     raise GTOWizardError(f"{method} {path}: HTTP {e.code} {detail}") from None
             except (urllib.error.URLError, TimeoutError) as e:
@@ -134,10 +132,18 @@ class GTOWizard(external.Opponent):
     cap_setting = DAILY_CAP_SETTING
 
     def check_configured(self):
-        api_key()
+        external.check_proxy(NAME)
 
     def daily_cap_per_bot(self):
-        return int(external.env_value(DAILY_CAP_SETTING) or DEFAULT_DAILY_CAP)
+        """From the environment if set there, else from the proxy (the owner's
+        setting in the repo's secrets file), else the default."""
+        value = os.environ.get(DAILY_CAP_SETTING)
+        if value:
+            return int(value)
+        try:
+            return int(external.proxy_status()["upstreams"][NAME]["daily_hands_per_bot"])
+        except ExternalError:
+            return DEFAULT_DAILY_CAP
 
     def backend(self):
         return Backend()

@@ -1,4 +1,4 @@
-.PHONY: install demo test validate clean web web-test
+.PHONY: install demo test validate clean web web-test proxy
 
 install:
 	@echo ">> Installing Cython<3 (eval7 build dep)"
@@ -9,6 +9,10 @@ install:
 	pip3 install flask numpy scipy treys scikit-learn
 	@echo ">> Installing the poker command (arena package)"
 	pip3 install -e ".[dev]"
+
+proxy:
+	@echo ">> Outside-bot proxy: every Slumbot and GTO Wizard call goes through it"
+	poker proxy
 
 demo:
 	python3 demo.py

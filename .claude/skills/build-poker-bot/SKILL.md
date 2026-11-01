@@ -11,7 +11,7 @@ Ground rules:
 - Only change files in `my_bots/<name>/`. The engine, the tools and other bots are off limits; if a tool is broken, tell the user and don't patch it in your branch.
 - Never edit another agent's worktree. Their bots are opponents: play them by name, and don't read their code.
 - Keep every claim in the PR reproducible: give the seed, the command and the code hash for each.
-- Outside bots (Slumbot, GTO Wizard) are shared and limited: follow their budget in step 3. Never read, print or copy `.env`.
+- Outside bots are shared and limited: Slumbot only, through the outside-bot proxy, as in step 3. **Never play GTO Wizard**: its quota is reserved for the user. Never read, print or copy `.env`, and never call slumbot.com or GTO Wizard yourself.
 
 ## 1. Set up the worktree
 
@@ -44,6 +44,14 @@ Worktrees have no `.venv` of their own, so you use the main worktree's (and the 
 ```
 
 Never stop or restart it: other agents and the user are using it. `poker match` and `poker run` execute on it, so your matches show live at `http://127.0.0.1:8765` (each command prints a `#/match/<key>` or `#/run/<id>` link) and land in `<main>/data/runs/`.
+
+**Outside-bot proxy.** Every Slumbot call goes through one local proxy (`poker proxy`, on port 8766). It holds the credentials, turns each outside bot on or off for the user, and queues requests from every agent under one limit. `setup.sh` reports whether it's up. If it isn't, start it the same way, leave it running, and tell the user:
+
+```bash
+(cd <main> && nohup .venv/bin/poker proxy > data/proxy.log 2>&1 &)
+```
+
+Never stop or restart it, and never work around it.
 
 ## 2. The bot contract
 
@@ -91,21 +99,20 @@ $POKER run --format bracket --bots my_bots/<name> $($S/opponents.sh --names) sha
 
 Other agents' bots change while you work (each result records every bot's code hash), so treat those results as a scrimmage, not a fixed benchmark. The bench (reference bots, fixed seeds) is the stable score.
 
-**Outside bots: Slumbot and GTO Wizard.** Two strong heads-up bots, played through their own APIs, as `slumbot` and `gto_wizard`. They are far stronger than the reference bots, so they show leaks the bench can't. They play a fixed game: heads-up, 200bb at 50/100, every hand from the starting stack.
-- They deal on their own servers: no seeds, no duplicate. Judge by the **luck-adjusted bb/100** with its 95% CI, never raw chips. Slumbot's score is its baseline, GTO Wizard's is AIVAT. Even luck-adjusted, the CI is wide: about ±140 bb/100 at 200 hands, so use 2,000+ hands to compare two versions.
-- Bench them **separately** from the reference bench, so its history stays comparable:
+**Outside bot: Slumbot.** A strong heads-up bot, played through its own API as `slumbot`. It is far stronger than the reference bots, so it shows leaks the bench can't. It plays a fixed game: heads-up, 200bb at 50/100, every hand from the starting stack. (`gto_wizard` also exists, but it is the user's: never play it. The proxy refuses it unless the user turned it on, and even then it isn't yours to use.)
+- It deals on its own server: no seeds, no duplicate. Judge by the **luck-adjusted bb/100** (Slumbot's baseline) with its 95% CI, never raw chips. Even luck-adjusted, the CI is wide: about ±140 bb/100 at 200 hands, so use 2,000+ hands to compare two versions.
+- Bench it **separately** from the reference bench, so that history stays comparable:
   ```bash
-  # Slumbot: free, while iterating. 2 x 1000 hands, about 8-15 minutes
+  # 2 x 1000 hands: 8-15 minutes when the proxy is quiet, longer when other agents are playing
   $POKER bench my_bots/<name> --opponents slumbot --hands 1000
-  # GTO Wizard: final check only. 2 x 1250 = 2,500 hands
-  $POKER bench my_bots/<name> --opponents gto_wizard --hands 1250
   # watch a few hands, or study one match
   $POKER match my_bots/<name> slumbot --hands 30 --pace 300 --id <name>_slum_watch1
   $PY $S/analyze_match.py <name>_slum_watch1 <name>
   ```
-- **Slumbot budget:** it is a free service run by one person. The tools already cap it at 3 hands at once; on top of that, run **one Slumbot bench at a time** (never in parallel with another Slumbot match), and only at checkpoints: after a change has passed the reference bench, not on every edit. About 10,000 hands a day per agent at most.
-- **GTO Wizard budget:** one API key with ~100,000 hands a month, shared by every agent and the user. Each bot may play at most 5,000 hands a day against it, and the tools refuse anything beyond that. Use it **once per final version** (the 2,500-hand bench above), not for iteration. If the tools refuse ("daily cap"), stop using it and tell the user. Don't raise the cap or work around it (e.g. by renaming the bot).
-- `poker match` and `poker bench` print the luck-adjusted result. Every hand you play against either bot is logged in `<main>/data/external/usage.jsonl`.
+- **It goes through the proxy.** The proxy caps the requests in flight and the hands per day across every agent, so a Slumbot bench runs slower when others are playing. That is expected: let it run, and do other work (reference bench, scrimmages) meanwhile. `$POKER proxy --status` shows the queue and today's hands.
+- **Slumbot budget:** it is a free service run by one person. Run **one Slumbot bench at a time** (never in parallel with another of your Slumbot matches), and only at checkpoints: after a change has passed the reference bench, not on every edit.
+- **When the proxy refuses** (Slumbot switched off, or the daily cap across everyone reached), stop playing Slumbot, carry on with the reference bench and scrimmages, and mention it in your report. Don't retry in a loop, and never work around it.
+- `poker match` and `poker bench` print the luck-adjusted result. Every hand you play is logged in `<main>/data/external/usage.jsonl`.
 
 **Play it yourself (optional).** On `http://127.0.0.1:8765/#/new`, add You and your bot, then press Start and play. Or ask the user to try it.
 
@@ -132,10 +139,9 @@ Before finishing, check for failure modes the bench doesn't show:
 2. **Final numbers.** On the final code, run:
    - the reference bench;
    - one round robin against the other agents and the reference bots, on fixed seeds;
-   - the Slumbot bench (2 x 1000 hands);
-   - **once**, the GTO Wizard bench (2 x 1250 hands).
+   - the Slumbot bench (2 x 1000 hands; skip it if the proxy refuses, and say so in the PR).
 
-   pr_report.py picks the outside-bot results up from the bench history and marks any played with older code.
+   pr_report.py picks the Slumbot result up from the bench history and marks one played with older code. GTO Wizard results, if the user ran any, appear there too; don't run it yourself.
 3. **Metrics.** Generate the metrics section:
    ```bash
    $PY $S/pr_report.py <name> --run <name>_rr_final [--run <name>_br_series_1] [--match <name>_t9] > /tmp/<name>_metrics.md
@@ -156,7 +162,7 @@ PR body structure:
 ### Strategy
 <a paragraph on the idea, then bullets: preflop, postflop, bet sizing, opponent modelling, time budget>
 
-<paste the pr_report.py output: bench per opponent with CIs, version history, Slumbot and GTO Wizard (luck-adjusted), round robin / bracket vs other agents, match health>
+<paste the pr_report.py output: bench per opponent with CIs, version history, Slumbot (luck-adjusted), round robin / bracket vs other agents, match health>
 
 ### What changed along the way
 <the dev log: each change, why, and its bench effect, including reverted ideas>

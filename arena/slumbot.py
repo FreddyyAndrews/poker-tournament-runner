@@ -15,7 +15,10 @@ No key is needed: the first new_hand returns a session token, sent with
 every request after it (it can change; we always keep the latest). A session
 plays one hand at a time, so playing several at once uses several sessions.
 Slumbot is a free service run by one person, so we keep it gentle: at most
-MAX_WORKERS sessions at once and retries that back off.
+MAX_WORKERS sessions at once per match, retries that back off, and every call
+goes through the outside-bot proxy (arena/proxy.py), which caps the requests
+in flight and the hands per day across every process and logs in to the
+Slumbot account when one is configured.
 """
 
 import json
@@ -30,7 +33,7 @@ import arena
 from arena import external
 from arena.external import ExternalError, View
 
-API_URL = os.environ.get("SLUMBOT_API_URL", "https://slumbot.com/slumbot/api")
+API_URL = external.PROXY_URL + "/slumbot/api"        # Slumbot's API, through the proxy
 NAME = "slumbot"
 DEFAULT_WORKERS = 2
 MAX_WORKERS = 3
@@ -41,18 +44,18 @@ class SlumbotError(ExternalError):
 
 
 class Client:
-    """Slumbot's two calls, with retries on server errors and timeouts. Logs in
-    when SLUMBOT_USERNAME and SLUMBOT_PASSWORD are set (results then count on
-    slumbot.com under that account); otherwise plays anonymous sessions."""
+    """Slumbot's calls through the proxy, with retries on server errors and
+    timeouts. The proxy logs in when the owner set up a Slumbot account
+    (results then count on slumbot.com under it); otherwise sessions are
+    anonymous. The timeout is long because the proxy may queue a request
+    while other bots play."""
 
     RETRY_STATUS = (429, 500, 502, 503, 504)
 
-    def __init__(self, url: str = API_URL, retries: int = 5, timeout_s: float = 30):
+    def __init__(self, url: str = API_URL, retries: int = 5, timeout_s: float = external.PROXY_WAIT_S):
         self.url = url.rstrip("/")
         self.retries = retries
         self.timeout_s = timeout_s
-        self.username = external.env_value("SLUMBOT_USERNAME")
-        self.password = external.env_value("SLUMBOT_PASSWORD")
 
     def _post(self, path, body):
         data = json.dumps(body).encode()
@@ -65,7 +68,7 @@ class Client:
                     resp = json.loads(r.read())
                 break
             except urllib.error.HTTPError as e:
-                detail = e.read().decode(errors="replace")[:500]
+                detail = external.http_error_detail(e.read().decode(errors="replace")[:500])
                 if e.code not in self.RETRY_STATUS or attempt == self.retries:
                     raise SlumbotError(f"{path}: HTTP {e.code} {detail}") from None
             except (urllib.error.URLError, TimeoutError) as e:
@@ -77,10 +80,9 @@ class Client:
         return resp
 
     def login(self):
-        """A session token for the configured account, or None (anonymous)."""
-        if not (self.username and self.password):
-            return None
-        return self._post("login", {"username": self.username, "password": self.password})["token"]
+        """A session token for the owner's account, or None (anonymous). The
+        proxy adds the credentials."""
+        return self._post("login", {}).get("token")
 
     def new_hand(self, token=None) -> dict:
         return self._post("new_hand", {"token": token} if token else {})
@@ -160,6 +162,9 @@ class Slumbot(external.Opponent):
     score_kind = "baseline"
     default_workers = DEFAULT_WORKERS
     max_workers = MAX_WORKERS
+
+    def check_configured(self):
+        external.check_proxy(NAME)
 
     def backend(self):
         return Backend()
