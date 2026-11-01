@@ -65,8 +65,9 @@ Read `bots/template/bot.py` (the full `game_state` schema) and look at `bots/sha
 - Limits:
   - **2 s per decision** (aim for < 200 ms p95). A timeout or crash folds.
   - stdlib plus `eval7`, `numpy`, `scipy`, `treys` and `scikit-learn`.
-  - No network, no file writes and no subprocesses.
-  - Optional read-only `data/` next to `bot.py`, loaded at import time only.
+  - No network, no file writes and no subprocesses. Locally these are enforced too (`sandbox/guard.py`): a bot can open only files in its own folder, gets no secrets from the environment, and can connect only to this machine.
+  - Optional read-only `data/` next to `bot.py`, loaded at import time only (weights, tables: up to 20 MB a file). It is part of the bot: commit it.
+  - Trained models: train offline with scripts in `my_bots/<name>/tools/` (they may use the engine), ship the result in `data/`, and run it with numpy inside the time budget.
 - Validate after every edit: `$PY sandbox/validator.py my_bots/<name>/bot.py` (must print PASS).
 
 ## 3. Test
@@ -78,8 +79,10 @@ All commands run in your worktree. Use fixed `--seed`s so comparisons are fair.
 $POKER match my_bots/<name> shark mathematician aggressor --cash --hands 300 --seed 11 --id <name>_t1
 # heads-up vs one bot
 $POKER match my_bots/<name> shark --cash --hands 500 --seed 12 --id <name>_hu_shark
-# the score to improve: duplicate heads-up vs every reference bot, 95% CIs, history kept per code hash
+# duplicate heads-up vs every reference bot, 95% CIs, history kept per code hash
 $POKER bench my_bots/<name> --workers 4
+# the score to improve once you beat the reference bots easily: every champion (frozen strongest bots)
+$POKER bench my_bots/<name> --gauntlet --workers 4
 # what went wrong in a match: actions by street, think time, errors, biggest losing hands with your logs/debug
 $PY $S/analyze_match.py <name>_t1 <name>
 ```
@@ -98,7 +101,7 @@ $POKER run --format bracket --bots my_bots/<name> $($S/opponents.sh --names) sha
      --blinds turbo --runs 30 --workers 4 --seed 41 --id <name>_br_series_1
 ```
 
-Other agents' bots change while you work (each result records every bot's code hash), so treat those results as a scrimmage, not a fixed benchmark. The bench (reference bots, fixed seeds) is the stable score.
+Other agents' bots change while you work (each result records every bot's code hash), so treat those results as a scrimmage, not a fixed benchmark. The bench is the stable score: the reference bench at first, then the gauntlet (`--gauntlet`, the champions in `champions/`, see `$POKER champions`) once you beat the reference bots by hundreds of bb/100. Never edit `champions/`; the user decides which bots become champions.
 
 **Outside bot: Slumbot.** A strong heads-up bot, played through its own API as `slumbot`. It is far stronger than the reference bots, so it shows leaks the bench can't. It plays a fixed game: heads-up, 200bb at 50/100, every hand from the starting stack. (`gto_wizard` also exists, but it is the user's: never play it. The proxy refuses it unless the user turned it on, and even then it isn't yours to use.)
 - It deals on its own server: no seeds, no duplicate. Judge by the **luck-adjusted bb/100** (Slumbot's baseline) with its 95% CI, never raw chips. Even luck-adjusted, the CI is wide: about ±140 bb/100 at 200 hands, so use 2,000+ hands to compare two versions.
@@ -139,6 +142,7 @@ Before finishing, check for failure modes the bench doesn't show:
 1. **README.** Finish `my_bots/<name>/README.md`: a strategy section covering preflop, postflop, sizing, opponent modelling and the time budget; the development log; and known weaknesses.
 2. **Final numbers.** On the final code, run:
    - the reference bench;
+   - the gauntlet bench (`--gauntlet`);
    - one round robin against the other agents and the reference bots, on fixed seeds;
    - the Slumbot bench (2 x 1000 hands; skip it if the proxy refuses, and say so in the PR).
 

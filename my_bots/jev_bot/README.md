@@ -24,8 +24,12 @@ One `POST https://api.typesafe.ai/v1/systemone` per decision:
 Each decision's `debug` holds the model id, latency, confidence, the full probability distribution over
 actions and sizes, and token usage, so the UI's decision inspector shows exactly what Jev thought.
 
-Config: `JEV_API_KEY` from the environment or the repo root `.env`, `JEV_MODEL`
-(default `jev-latest`), `JEV_SAFETY_MS` (time kept free under the deadline, default 400).
+Jev is reached through the outside-bot proxy (`poker proxy`, `POST /jev/v1/systemone`): the proxy holds
+`JEV_API_KEY`, counts each reply's tokens against the Jev budget, and refuses with HTTP 402 once the day's
+allowance or this bot's share is spent (the bot then falls back to check/fold and records `http_402` in
+`debug`). The bot sends no key, only `X-Poker-Bot: jev_bot`. Config: `POKER_PROXY_URL` (default
+`http://127.0.0.1:8766`), `JEV_MODEL` (default `jev-latest`), `JEV_SAFETY_MS` (time kept free under the
+deadline, default 400).
 
 ## v1 results with the raw game state (jev-1.13.0, local, 50/100 cash)
 

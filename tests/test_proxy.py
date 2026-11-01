@@ -49,6 +49,9 @@ class FakeUpstream:
                 elif self.path in ("/new_hand", "/act"):
                     resp = {"token": "t1", "action": "", "client_pos": 1, "hole_cards": ["Ah", "Kd"],
                             "board": []}
+                elif self.path == "/v1/systemone":                # Jev
+                    resp = {"answers": {"action": {"choice": "call"}},
+                            "usage": {"input_tokens": 1000, "output_tokens": 100}}
                 else:                                           # GTO Wizard
                     resp = {"hand_id": 7, "path": self.path}
                 raw = json.dumps(resp).encode()
@@ -279,3 +282,118 @@ def test_cli_status_without_a_proxy(capsys):
     with pytest.raises(SystemExit):
         cli.main(["proxy", "--status", "--url", "http://127.0.0.1:9"])
     assert "no outside-bot proxy" in capsys.readouterr().err
+
+
+# -- Jev: a spending budget ------------------------------------------------------
+
+JEV_KEY = "jev-made-up-key-789"  # gitleaks:allow (made up, for the fake API)
+
+
+def jev(url, bot="jev_test", body=None):
+    """One Jev request through the proxy: (status, JSON body)."""
+    headers = {"Content-Type": "application/json"}
+    if bot:
+        headers["X-Poker-Bot"] = bot
+    req = urllib.request.Request(url + "/jev/v1/systemone", method="POST", headers=headers,
+                                 data=json.dumps(body or {"state": "s", "questions": {}}).encode())
+    try:
+        with urllib.request.urlopen(req, timeout=10) as r:
+            return r.status, json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        return e.code, json.loads(e.read())
+
+
+@pytest.fixture
+def jev_secrets(secrets, upstream):
+    def write(**settings):
+        secrets(JEV_UPSTREAM_URL=upstream.url + "/v1/systemone", JEV_API_KEY=JEV_KEY, **settings)
+    write()
+    return write
+
+
+def test_jev_gets_the_key_and_counts_each_bots_spend(run_proxy, upstream, jev_secrets):
+    jev_secrets(JEV_PRICE_PER_MTOK="2", JEV_MONTHLY_BUDGET_USD="1000")
+    url, _ = run_proxy()
+    status, body = jev(url, "jev_bot")
+    assert status == 200 and body["answers"]["action"]["choice"] == "call"
+    assert jev(url, "jev_bot_v2")[0] == 200
+    assert upstream.requests[0]["headers"].get("Authorization") == f"Bearer {JEV_KEY}"
+    s = proxy.fetch_status(url)["upstreams"]["jev"]
+    assert s["allowed"] and s["key_configured"] and s["tokens_today"] == 2200
+    assert s["bots_today_usd"] == {"jev_bot": 0.0022, "jev_bot_v2": 0.0022}   # 1,100 tokens at $2/M
+    assert s["spent_today_usd"] == 0.0044
+    assert JEV_KEY not in json.dumps(proxy.fetch_status(url))
+
+
+def test_jev_needs_the_bots_name_and_a_compact_request(run_proxy, upstream, jev_secrets):
+    jev_secrets(JEV_MAX_REQUEST_BYTES="500")
+    url, _ = run_proxy()
+    status, body = jev(url, bot=None)
+    assert status == 400 and "X-Poker-Bot" in body["detail"]
+    status, body = jev(url, body={"state": "x" * 1000})
+    assert status == 413 and "compact state" in body["detail"]
+    assert upstream.requests == []
+
+
+def test_jev_stops_at_the_days_allowance_and_each_bots_share(run_proxy, upstream, jev_secrets):
+    # $1.10 per request; a $93 month with 31 days -> today's allowance is $3 at most
+    jev_secrets(JEV_PRICE_PER_MTOK="1000", JEV_MONTHLY_BUDGET_USD="93", JEV_BOT_DAILY_SHARE="0.5")
+    url, p = run_proxy()
+    days_left = p.upstreams["jev"].money()["days_left_in_month"]
+    allowance = 93 / days_left
+    spent = 0.0
+    while spent < allowance * 0.5:                    # one bot uses its half
+        assert jev(url, "a")[0] == 200
+        spent += 1.1
+    status, body = jev(url, "a")
+    assert status == 402 and "share" in body["detail"]
+    while spent < allowance:                          # another bot uses the rest
+        assert jev(url, "b")[0] == 200
+        spent += 1.1
+    status, body = jev(url, "c")
+    assert status == 402 and "budget for today" in body["detail"]
+
+
+def test_jev_spreads_the_month_over_the_days_left(tmp_path, jev_secrets, secrets):
+    # it is the 21st of a 30-day month and $7 of a $10 budget went earlier this month
+    now = time.mktime((2026, 11, 21, 12, 0, 0, 0, 0, -1))
+    usage = proxy.Usage(tmp_path / "u.json", now=lambda: now)
+    usage.days = {"2026-11-03": {"jev_tokens": 7_000_000}, "2026-10-30": {"jev_tokens": 99_000_000}}
+    jev_secrets(JEV_PRICE_PER_MTOK="1", JEV_MONTHLY_BUDGET_USD="10")
+    j = proxy.Proxy(proxy.Settings(secrets.path, environ={}), usage).upstreams["jev"]
+    m = j.money()
+    assert m["days_left_in_month"] == 10 and m["spent_month_usd"] == 7.0      # October doesn't count
+    assert m["allowance_today_usd"] == 0.3                                   # $3 left over 10 days
+
+
+def test_jev_monthly_budget_is_a_hard_stop(tmp_path, jev_secrets, secrets):
+    now = time.mktime((2026, 11, 21, 12, 0, 0, 0, 0, -1))
+    usage = proxy.Usage(tmp_path / "u.json", now=lambda: now)
+    usage.days = {"2026-11-20": {"jev_tokens": 10_000_000}}
+    jev_secrets(JEV_PRICE_PER_MTOK="1", JEV_MONTHLY_BUDGET_USD="10")
+    j = proxy.Proxy(proxy.Settings(secrets.path, environ={}), usage).upstreams["jev"]
+    status, why = j.why_not_bot("jev_bot")
+    assert status == 402 and "monthly budget" in why
+
+
+def test_jev_can_be_switched_off(run_proxy, upstream, jev_secrets):
+    jev_secrets(ALLOW_JEV="false")
+    url, _ = run_proxy()
+    status, body = jev(url)
+    assert status == 403 and "ALLOW_JEV" in body["detail"]
+    assert upstream.requests == []
+
+
+def test_jev_prices_input_and_output_separately(run_proxy, upstream, jev_secrets):
+    jev_secrets(JEV_PRICE_PER_MTOK="1", JEV_OUTPUT_PRICE_PER_MTOK="10", JEV_MONTHLY_BUDGET_USD="1000")
+    url, _ = run_proxy()
+    assert jev(url, "jev_bot")[0] == 200                     # 1,000 in at $1/M + 100 out at $10/M
+    s = proxy.fetch_status(url)["upstreams"]["jev"]
+    assert (s["input_tokens_today"], s["output_tokens_today"]) == (1000, 100)
+    assert s["spent_today_usd"] == 0.002 and s["bots_today_usd"] == {"jev_bot": 0.002}
+
+
+def test_jev_default_prices(run_proxy, jev_secrets):
+    url, _ = run_proxy()
+    s = proxy.fetch_status(url)["upstreams"]["jev"]
+    assert s["price_per_mtok"] == 0.04 and s["output_price_per_mtok"] == 0.04

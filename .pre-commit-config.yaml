@@ -6,9 +6,10 @@
 # --no-verify. gitleaks comes from Homebrew (`brew install gitleaks`); the
 # other tools are pinned here and installed by pre-commit itself.
 
-# Reference bots are benchmark opponents and the bench keys results by their
-# code hash, so no hook may rewrite them.
-exclude: ^bots/
+# Reference bots and champions are benchmark opponents and the bench keys
+# results by their code hash, so no hook may rewrite them. (gitleaks still
+# scans everything a commit stages.)
+exclude: ^(bots|champions)/
 
 repos:
   - repo: local
@@ -26,6 +27,13 @@ repos:
       - id: check-merge-conflict
       - id: check-added-large-files
         args: [--maxkb=1024]
+        exclude: ^my_bots/[^/]+/data/
+      # A bot's data/ may hold trained weights or strategy tables: up to 20 MB
+      # a file (GitHub refuses files over 100 MB).
+      - id: check-added-large-files
+        name: check for added large files (bot data, 20 MB)
+        args: [--maxkb=20480]
+        files: ^my_bots/[^/]+/data/
       - id: check-yaml
       - id: check-toml
       - id: check-json

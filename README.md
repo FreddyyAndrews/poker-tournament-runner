@@ -130,7 +130,16 @@ Two strong outside bots can be played through their own APIs, as `slumbot` or `g
 | `GTO_WIZARD_PROXY_MAX_IN_FLIGHT` | 20 | GTO Wizard requests in flight at once |
 | `GTO_WIZARD_PROXY_DAILY_HANDS` | 5,000 | GTO Wizard hands per day, across everyone |
 | `GTO_WIZARD_DAILY_HANDS_PER_BOT` | 5,000 | GTO Wizard hands per day for one bot |
+| `ALLOW_JEV` | `true` | Jev, the model the jev bots ask, on or off |
+| `JEV_API_KEY` | | Jev's key; the proxy adds it, bots never see it |
+| `JEV_MONTHLY_BUDGET_USD` | 10 | Jev spend per month, spread evenly over the days left |
+| `JEV_PRICE_PER_MTOK` | 0.04 | Dollars per million Jev input tokens, TypeSafe's starting price |
+| `JEV_OUTPUT_PRICE_PER_MTOK` | the input price | Dollars per million Jev output tokens; set it if output costs more |
+| `JEV_BOT_DAILY_SHARE` | 0.5 | The most one bot may spend of a day's Jev allowance |
+| `JEV_MAX_REQUEST_BYTES` | 16,000 | Larger Jev requests are refused, about 4k tokens |
 | `POKER_PROXY_URL` (environment) | `http://127.0.0.1:8766` | Where matches find the proxy |
+
+**Jev through the proxy.** The jev bots call Jev at `http://127.0.0.1:8766/jev/v1/systemone` with only an `X-Poker-Bot: <name>` header. The proxy adds the key, counts each reply's tokens per bot, and refuses with HTTP 402 once today's allowance or the bot's share is spent. Today's allowance is what's left of the month divided by the days left, so the budget can't be spent in a day. `poker proxy --status` shows today's and the month's spend and each bot's share.
 
 - **The game is fixed:** heads-up, 200bb stacks at 50/100, reset every hand (like `--cash`). `--freezeout`, `--blinds`, `--stack` and `--seed` are refused.
 - **They deal**, on their own server: you see your cards, the board and the action, and theirs when the hand ends. The match is logged like any other (live view, replay, analysis), but there is no seed, so it can't be replayed or duplicated. `poker verify` checks only the chip accounting.
@@ -147,6 +156,17 @@ poker bench my_bots/mybot --opponents shark aggressor --hands 2000 --workers 4
 ```
 
 `poker bench` plays a duplicate cash match against each opponent with **fixed seeds**, so every version of your bot faces exactly the same cards. It reports bb/100 per opponent with a 95% confidence interval, plus the average, and appends the result to `data/bench/<bot>.jsonl` with the bot's code hash, showing how the score changed since the last version. If the confidence intervals overlap, the change may just be noise: add hands.
+
+**The champion gauntlet.** Once a bot beats the reference bots by hundreds of bb/100, they stop telling versions apart. Champions are frozen copies of the strongest bots, kept in `champions/` and played with `--gauntlet`:
+
+```bash
+poker champions                                  # list them
+poker bench my_bots/mybot --gauntlet --workers 4  # play every champion
+poker champions add my_bots/mybot --note "beat the gauntlet by 120 bb/100"
+poker champions remove mybot_1a2b3c
+```
+
+A champion is an exact copy of the bot's folder, named `<bot>_<first 6 hex of its hash>`, so it keeps the hash its bench history uses. `champions/index.json` records where each came from. A champion must pass the validator, so bots that need the network, like the jev bots, can't be champions, and a gauntlet bench never spends outside credits. An identical copy of the bot being benched is left out. Each bench history entry records its `suite` (`reference`, `gauntlet` or `custom`), and results only compare with the same opponents and hands.
 
 **Against Slumbot and GTO Wizard:** add them as opponents, e.g. `poker bench my_bots/mybot --opponents shark slumbot gto_wizard`. They deal on their own servers, so there are no fixed seeds: each plays 2 x `--hands` hands, scored by their luck-adjusted bb/100 (with raw chips alongside). Slumbot is free, so use it while iterating. Save GTO Wizard for a final check, because its quota is shared: it is off until you set `ALLOW_GTO_WIZARD_BENCHMARKING=true`, and each bot may play at most 5,000 hands a day against it (`GTO_WIZARD_DAILY_HANDS_PER_BOT` changes this). Every hand played against either is logged in `data/external/usage.jsonl`.
 
@@ -220,6 +240,14 @@ A seat can be played by **you** or by **an LLM over MCP** instead of a bot. Both
 Human and LLM seats play single tables (not tournaments). Their decisions are logged like a bot's, so these matches replay and verify too. API: `POST /api/matches` with bots like `"human:Ann"` / `"mcp:claude"` returns a token per seat; `GET /api/seats/<token>` shows the pending decision and `POST /api/seats/<token>/act` answers it. `GET /api/seats?kind=mcp` lists unclaimed LLM seats, and `POST /api/seats/claim` with `{"match", "seat"}` claims one and returns its token (409 if it's taken).
 
 ### Docker sandbox
+
+**Without Docker,** the default, each bot runs as a local Python process confined by `sandbox/guard.py`:
+
+- **A short environment.** It gets only an allowlist (`PATH`, `HOME`, locale, `BOT_*`, `JEV_*`, `POKER_PROXY_URL`), and never a variable whose name looks like a secret, such as `*KEY*`, `*TOKEN*` or `*PASSWORD*`.
+- **Its own folder only.** An audit hook, installed before the bot is imported, refuses opening or listing files outside the bot's folder and the Python installation, writing files, starting processes, and network connections to anything but this machine. The jev bots reach the proxy on `127.0.0.1`.
+- **The validator** runs bots confined the same way. It also rejects `dotenv`, any path to a `.env` file, and reading credential-like environment variables.
+
+This stops careless code, such as a bot loading the repo's `.env`, and casual attempts, but not a determined attacker. For untrusted code, use Docker.
 
 To run bots in the Docker sandbox (`--docker` on `match`, `run` and `bench`; the competition setup), build the image first, and rebuild it whenever `sandbox/runner.py` changes:
 
@@ -298,7 +326,7 @@ Invalid or missing actions count as a fold. Raises below the minimum are snapped
 - 2 seconds to return an action, or your bot folds
 - 768 MB RAM and 0.5 CPU core per bot (in the Docker sandbox)
 - No network access during gameplay
-- No file writes. You may read from `data/`, but only at module import time
+- No file writes. You may read from `data/`, but only at module import time. A bot's `data/` folder is part of the bot: commit it with `bot.py`. Files there may be up to 20 MB each.
 - Crashes and exceptions fold that hand; your bot stays in the game
 
 **Available libraries:** `eval7`, `numpy`, `scipy`, `treys`, `scikit-learn` and the Python 3.10 standard library.

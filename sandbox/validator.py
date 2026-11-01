@@ -21,6 +21,7 @@ import ast
 import importlib.util
 import json
 import os
+import re
 import shutil
 import threading
 import sys
@@ -61,6 +62,7 @@ FORBIDDEN_MODULES = {
     "threading", "asyncio",
     "ctypes",                        # FFI, can call libc
     "runpy", "importlib",            # dynamic imports
+    "dotenv",                        # secrets stay out of bots (sandbox/guard.py)
 }
 
 # Specific call patterns banned even if their module is allowed.
@@ -335,6 +337,38 @@ def check_static(path: str) -> list:
                 "message": "Forbidden: __builtins__[...] — reflection escape attempt.",
             })
 
+    # Secrets stay out of bots: no path to a .env file, and no reading of
+    # environment variables whose names look like credentials. (At run time
+    # sandbox/guard.py also keeps them out of reach.)
+    SECRETS_FILE = re.compile(r"(^|[/\\])\.env(\.[\w.-]+)?$")
+    SECRET_NAME = re.compile(r"KEY|TOKEN|SECRET|PASS|CREDENTIAL|AUTH|COOKIE|SESSION", re.IGNORECASE)
+
+    def _str(node):
+        return node.value if isinstance(node, ast.Constant) and isinstance(node.value, str) else None
+
+    for node in ast.walk(tree):
+        s = _str(node)
+        if s is not None and SECRETS_FILE.search(s.strip()):
+            warnings.append({
+                "level": "error",
+                "check": "secrets",
+                "message": f"Forbidden: {s!r} names a secrets file. Bots never read .env; "
+                           "anything a bot needs from outside goes through the outside-bot proxy.",
+            })
+        name = None
+        if isinstance(node, ast.Subscript) and _attr_chain(node.value) == "os.environ":
+            name = _str(node.slice)
+        elif isinstance(node, ast.Call) and _attr_chain(node.func) in ("os.environ.get", "os.getenv",
+                                                                     "os.environ.pop", "os.environ.setdefault"):
+            name = _str(node.args[0]) if node.args else None
+        if name and SECRET_NAME.search(name):
+            warnings.append({
+                "level": "error",
+                "check": "secrets",
+                "message": f"Forbidden: reading the environment variable {name!r}. Bots get no "
+                           "credentials; anything that needs one goes through the outside-bot proxy.",
+            })
+
     # Check decide() exists
     has_decide = any(
         isinstance(node, ast.FunctionDef) and node.name == "decide"
@@ -539,6 +573,23 @@ def _resolve_submission(bot_path):
     return None, None, cleanup_dir, ["Unsupported submission (must be .py, .zip, or directory): " + bot_path]
 
 
+# Set by the CLI: the bot is imported and called in this process, so before
+# that the process drops secret-looking environment variables and confines
+# itself to the bot's folder (sandbox/guard.py), as a match's bot process does.
+CONFINE = False
+
+
+def _confine(bot_py):
+    try:
+        from sandbox import guard
+    except ImportError:
+        import guard
+    clean = guard.safe_env(os.environ)
+    os.environ.clear()
+    os.environ.update(clean)
+    guard.install(os.path.dirname(os.path.abspath(bot_py)))
+
+
 def validate(bot_path):
     """Full validation of a bot submission (.py file, directory, or .zip).
     Returns a result dict with passed/failed status and details.
@@ -570,6 +621,8 @@ def validate(bot_path):
         if results["errors"]:
             return results
 
+        if CONFINE:
+            _confine(bot_py)
         try:
             bot = load_bot(bot_py)
         except Exception:
@@ -610,6 +663,8 @@ def main():
     # The bot is imported and called in this process: anything it prints goes to
     # stderr, so stdout carries only the report (the --json output stays valid JSON).
     import contextlib
+    global CONFINE
+    CONFINE = True
     with contextlib.redirect_stdout(sys.stderr):
         result = validate(args.bot_path)
 

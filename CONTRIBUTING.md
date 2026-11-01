@@ -14,12 +14,12 @@ Thanks for helping out. Bug reports, fixes and improvements are welcome as issue
 
 - **gitleaks** blocks a commit that adds a secret (an API key, a token, a password). Secrets belong in `.env`, which git ignores. A deliberately fake secret in a test can be marked with a `gitleaks:allow` comment on its line.
 - **ruff** runs basic Python checks: syntax errors, unused or duplicate imports, unused variables and undefined names (`[tool.ruff]` in `pyproject.toml`). It fixes what it safely can.
-- **Whitespace and file checks** fix trailing whitespace, missing final newlines and line endings, and check YAML, TOML and JSON files, merge-conflict markers and files over 1 MB.
+- **Whitespace and file checks** fix trailing whitespace, missing final newlines and line endings, and check YAML, TOML and JSON files, merge-conflict markers and files over 1 MB (20 MB inside a bot's `data/`, for trained weights and tables).
 - **tsc** type-checks the web UI when files under `web/src/` change.
 
 When a hook fixes a file, the commit stops: review the change, `git add` it and commit again. Don't skip the hooks with `--no-verify`. `make lint` runs every hook on every file.
 
-The hooks never rewrite `bots/`: the bench identifies reference bots by a hash of their code, so even a whitespace fix would change them. They also leave bot `data/` folders alone, for the same reason.
+The hooks never rewrite `bots/` or `champions/`: the bench identifies those bots by a hash of their code, so even a whitespace fix would change them. They also leave bot `data/` folders alone, for the same reason. gitleaks still scans everything a commit stages.
 
 ## Before you open a PR
 

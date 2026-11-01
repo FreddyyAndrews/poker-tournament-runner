@@ -12,6 +12,12 @@ of the card luck), and the average across opponents. Every bench is appended
 to data/bench/<bot>.jsonl with the bot's content hash, so you can see how each
 version did.
 
+With gauntlet=True (`poker bench --gauntlet`) the opponents are the champions
+(arena/champions.py): frozen copies of the strongest bots, the benchmark that
+still tells good bots apart once the reference bots are beaten easily. Each
+history entry says which suite it played ("reference", "gauntlet" or
+"custom"), and results only compare with the same opponents and hands.
+
 Opponents may include the external bots, slumbot and gto_wizard (never by
 default). They deal on their own servers, so there are no fixed seeds or
 duplicate: the bot plays 2 x hands hands against each, and the score is
@@ -52,8 +58,18 @@ def _hand_deltas_bb(run_dir: Path, bot: str) -> list:
 
 
 def bench(bot: str, opponents=None, hands: int = 500, workers: int = 1, use_docker=None,
-          bench_dir: Path = BENCH_DIR, progress=()) -> dict:
+          bench_dir: Path = BENCH_DIR, progress=(), gauntlet: bool = False) -> dict:
     (spec,) = botlib.resolve_all([bot])
+    if gauntlet:
+        from arena import champions
+        if opponents:
+            raise ValueError("--gauntlet picks the opponents (every champion): leave out --opponents")
+        opponents = champions.opponents_for(spec.hash)
+        if not opponents:
+            raise ValueError("there are no champions yet: add some with `poker champions add <bot>`")
+        suite = "gauntlet"
+    else:
+        suite = "custom" if opponents else "reference"
     opponents = opponents or default_opponents(spec.name)
     ext = [external.find(o) for o in opponents if external.find(o)]
     for o in ext:
@@ -125,7 +141,7 @@ def bench(bot: str, opponents=None, hands: int = 500, workers: int = 1, use_dock
     overall = round(sum(r["bb_per_100"] for r in per_opp) / k, 2) if k else 0.0
     overall_ci = round(math.sqrt(sum(r["ci95"] ** 2 for r in per_opp)) / k, 2) if k else 0.0
     entry = {"time": time.strftime("%Y-%m-%dT%H:%M:%S"), "bot": spec.name, "hash": spec.hash,
-             "path": spec.path, "hands_per_leg": hands, "seed": BENCH_SEED,
+             "path": spec.path, "suite": suite, "hands_per_leg": hands, "seed": BENCH_SEED,
              "overall_bb_per_100": overall, "overall_ci95": overall_ci,
              "opponents": per_opp, "duration_s": round(time.time() - t0, 2),
              "runs_dir": str(runs_dir)}

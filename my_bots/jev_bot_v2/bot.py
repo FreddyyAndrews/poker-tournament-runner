@@ -16,9 +16,11 @@ calculator. There is no equity calculation and no opponent modelling on
 purpose: this version measures how far Jev's judgment alone gets.
 
 Needs network access, so it only runs locally (never in the Docker sandbox).
-API key: JEV_API_KEY in the environment or in the repo root .env.
+Jev is reached through the outside-bot proxy (`poker proxy`), which holds the
+API key and enforces the Jev budget: the bot sends no key, only its name.
 
 Env knobs:
+  POKER_PROXY_URL        the proxy (default http://127.0.0.1:8766)
   JEV_MODEL              model id or alias (default jev-latest)
   JEV_SAFETY_MS          time left unused under the decision deadline (default 400)
 """
@@ -26,23 +28,20 @@ import json
 import os
 import random
 import time
-from pathlib import Path
 
 import httpx
-from dotenv import load_dotenv
 
 BOT_NAME = "jev_bot_v2"
-API_URL = "https://api.typesafe.ai/v1/systemone"
 
 
 # ── Config ───────────────────────────────────────────────────────────────────
-load_dotenv(Path(__file__).resolve().parents[2] / ".env")   # repo root, never overrides
-API_KEY = os.environ.get("JEV_API_KEY")
+API_URL = os.environ.get("POKER_PROXY_URL", "http://127.0.0.1:8766").rstrip("/") + "/jev/v1/systemone"
 MODEL = os.environ.get("JEV_MODEL", "jev-latest")
 SAFETY_MS = int(os.environ.get("JEV_SAFETY_MS", "400"))
 
-_client = httpx.Client(headers={"Authorization": f"Bearer {API_KEY}",
-                                "Content-Type": "application/json"})
+# trust_env=False: no proxy settings or ~/.netrc from the environment
+_client = httpx.Client(headers={"X-Poker-Bot": BOT_NAME, "Content-Type": "application/json"},
+                       trust_env=False)
 
 
 # ── The "system prompt" ──────────────────────────────────────────────────────
@@ -243,8 +242,6 @@ def decide(game_state: dict) -> dict:
         return {"action": "check"}
 
     gs = game_state
-    if not API_KEY:
-        return _fallback(gs, "no_api_key")
 
     t0 = time.time()
     timeout_s = max(0.3, (gs.get("time_limit_ms", 2000) - SAFETY_MS) / 1000)

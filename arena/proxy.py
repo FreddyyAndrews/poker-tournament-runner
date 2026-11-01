@@ -26,9 +26,27 @@ What it does, per outside bot:
   - Forwards only the calls a match makes (Slumbot: login, new_hand, act;
     GTO Wizard: POST /hands and POST /hands/<id>/act).
 
+Jev (TypeSafe's System One model, which the jev bots ask for decisions) goes
+through it too, at POST /jev/v1/systemone, with a spending budget instead of
+a hand cap:
+  - JEV_API_KEY is added here; bots send no key, only X-Poker-Bot: <name>.
+  - Every reply's input and output tokens are counted per bot per day. Spend
+    is input tokens x JEV_PRICE_PER_MTOK (dollars per million input tokens,
+    default 0.04, TypeSafe's listed starting price) plus output tokens x
+    JEV_OUTPUT_PRICE_PER_MTOK (default: the input price; set it if output
+    costs more). Output is about 8% of a jev bot's tokens.
+  - JEV_MONTHLY_BUDGET_USD (default 10) is spread evenly over the days left
+    in the month: today's allowance is what's left of the month divided by
+    the days left, so nothing can spend the month in a day. One bot may use
+    at most JEV_BOT_DAILY_SHARE of today's allowance (default 0.5).
+  - Requests over JEV_MAX_REQUEST_BYTES (default 16,000, about 4k tokens)
+    are refused, so a bot can't send a huge context.
+  - ALLOW_JEV (default on) switches it off entirely.
+Refusals: 402 (budget), 413 (too large), 400 (no bot name), 403 (off).
+
 Its own refusals are HTTP 403 with a JSON body ({"error_msg": ...} for
-Slumbot, {"detail": ...} for GTO Wizard) saying why. GET /status reports the
-switches, caps, queue and today's counts, and never a secret.
+Slumbot, {"detail": ...} for GTO Wizard and Jev) saying why. GET /status
+reports the switches, caps, queue, today's counts and spend, never a secret.
 
 Standard library only, so it starts fast and doesn't import the engine.
 """
@@ -140,24 +158,39 @@ class Gate:
 
 
 class Usage:
-    """Hands started per day per outside bot, kept in a JSON file."""
+    """Counters per day (hands started, Jev tokens), kept in a JSON file.
+    `now` returns the time (seconds); tests move it."""
 
-    def __init__(self, path: Path = USAGE_FILE):
+    def __init__(self, path: Path = USAGE_FILE, now=time.time):
         self.path = Path(path)
+        self.now = now
         self.lock = threading.Lock()
         try:
             self.days = json.loads(self.path.read_text())
         except (OSError, ValueError):
             self.days = {}
 
+    def day_key(self) -> str:
+        return time.strftime("%Y-%m-%d", time.localtime(self.now()))
+
     def today(self, name: str) -> int:
         with self.lock:
-            return self.days.get(time.strftime("%Y-%m-%d"), {}).get(name, 0)
+            return self.days.get(self.day_key(), {}).get(name, 0)
+
+    def month_before_today(self, name: str) -> int:
+        """The counter's total over this month's earlier days."""
+        today = self.day_key()
+        with self.lock:
+            return sum(c.get(name, 0) for d, c in self.days.items() if d[:7] == today[:7] and d < today)
 
     def add(self, name: str, n: int = 1):
+        self.add_many({name: n})
+
+    def add_many(self, counts: dict):
         with self.lock:
-            day = self.days.setdefault(time.strftime("%Y-%m-%d"), {})
-            day[name] = day.get(name, 0) + n
+            day = self.days.setdefault(self.day_key(), {})
+            for name, n in counts.items():
+                day[name] = day.get(name, 0) + n
             for old in sorted(self.days)[:-KEEP_DAYS]:
                 del self.days[old]
             self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -232,7 +265,7 @@ class Upstream:
                 "daily_hands": self.daily_hands(), "hands_today": self.usage.today(self.name),
                 "requests": self.requests, "errors": self.errors, "refused": self.refused}
 
-    def handle(self, method: str, path: str, body: bytes):
+    def handle(self, method: str, path: str, body: bytes, headers: dict = None):
         """(status, JSON-able or bytes) for one client request."""
         route = self.route(method, path)
         if route is None:
@@ -322,6 +355,159 @@ class GTOWizardUpstream(Upstream):
                                                             GTOW_DAILY_PER_BOT_DEFAULT)}
 
 
+class JevUpstream(Upstream):
+    """Jev, TypeSafe's System One decision model, for the jev bots: a
+    spending budget rather than a hand cap (see the module docstring)."""
+    name, title = "jev", "Jev"
+    allow_setting, allow_default = "ALLOW_JEV", True
+    in_flight_setting, in_flight_default = "JEV_PROXY_MAX_IN_FLIGHT", 16
+    url_setting, url_default = "JEV_UPSTREAM_URL", "https://api.typesafe.ai/v1/systemone"
+    error_key = "detail"
+    PATH = "/jev/v1/systemone"
+    TOKENS = "jev_tokens"               # input + output, per day (and ":<bot>")
+    IN, OUT = "jev_in", "jev_out"       # the split, which prices them
+    DEFAULT_PRICE = 0.04                # TypeSafe's starting input price, $ per 1M tokens
+
+    def _float(self, name, default) -> float:
+        try:
+            return float(self.settings.get(name) or default)
+        except ValueError:
+            return float(default)
+
+    def price(self) -> float:
+        """Dollars per million input tokens."""
+        return self._float("JEV_PRICE_PER_MTOK", self.DEFAULT_PRICE)
+
+    def output_price(self) -> float:
+        """Dollars per million output tokens (the input price unless set)."""
+        return self._float("JEV_OUTPUT_PRICE_PER_MTOK", self.price())
+
+    def budget(self) -> float:
+        try:
+            return float(self.settings.get("JEV_MONTHLY_BUDGET_USD") or 10)
+        except ValueError:
+            return 10.0
+
+    def bot_share(self) -> float:
+        try:
+            return float(self.settings.get("JEV_BOT_DAILY_SHARE") or 0.5)
+        except ValueError:
+            return 0.5
+
+    def max_bytes(self) -> int:
+        return self.settings.number("JEV_MAX_REQUEST_BYTES", 16_000)
+
+    def spend(self, read, bot: str = None) -> float:
+        """Dollars for the counters `read(name)` returns (today's, or the
+        month's earlier days), for one bot or everyone. Tokens counted before
+        input and output were split are priced as input."""
+        suffix = f":{bot}" if bot else ""
+        tin, tout, total = (read(n + suffix) for n in (self.IN, self.OUT, self.TOKENS))
+        legacy = max(0, total - tin - tout)
+        return ((tin + legacy) * self.price() + tout * self.output_price()) / 1e6
+
+    def money(self, bot: str = None) -> dict:
+        """This month's and today's spend, and today's allowances, in dollars."""
+        t = time.localtime(self.usage.now())
+        days_in_month = (time.mktime((t.tm_year + t.tm_mon // 12, t.tm_mon % 12 + 1, 1, 12, 0, 0, 0, 0, -1))
+                         - time.mktime((t.tm_year, t.tm_mon, 1, 12, 0, 0, 0, 0, -1))) / 86400
+        days_left = int(round(days_in_month)) - t.tm_mday + 1
+        before = self.spend(self.usage.month_before_today)
+        today = self.spend(self.usage.today)
+        allowance = max(0.0, self.budget() - before) / max(1, days_left)
+        out = {"monthly_budget_usd": round(self.budget(), 4), "spent_month_usd": round(before + today, 4),
+               "spent_today_usd": round(today, 4), "allowance_today_usd": round(allowance, 4),
+               "days_left_in_month": days_left}
+        if bot:
+            out["bot_spent_today_usd"] = round(self.spend(self.usage.today, bot), 4)
+            out["bot_allowance_today_usd"] = round(allowance * self.bot_share(), 4)
+        return out
+
+    def missing_config(self):
+        if not self.settings.get("JEV_API_KEY"):
+            return "Jev: JEV_API_KEY is not set in the repo's .env."
+        return None
+
+    def why_not_bot(self, bot: str):
+        """Why a request from `bot` is refused now, or None."""
+        if not self.allowed():
+            return 403, "Jev is turned off: ALLOW_JEV is false in the repo's .env (only the owner can change it)."
+        missing = self.missing_config()
+        if missing:
+            return 403, missing
+        m = self.money(bot)
+        if m["spent_month_usd"] >= m["monthly_budget_usd"]:
+            return 402, (f"Jev's monthly budget of ${m['monthly_budget_usd']:.2f} is spent "
+                         "(JEV_MONTHLY_BUDGET_USD). It resets on the 1st.")
+        if m["spent_today_usd"] >= m["allowance_today_usd"]:
+            return 402, (f"Jev's budget for today (${m['allowance_today_usd']:.2f}: what's left this month "
+                         f"over the {m['days_left_in_month']} days left) is spent. It resets at midnight.")
+        if bot and m["bot_spent_today_usd"] >= m["bot_allowance_today_usd"]:
+            return 402, (f"{bot} has spent its share of Jev's budget today (${m['bot_allowance_today_usd']:.2f}, "
+                         "JEV_BOT_DAILY_SHARE of the day's allowance). It resets at midnight.")
+        return None
+
+    def status(self) -> dict:
+        refusal = self.why_not_bot(None)
+        bots = sorted(k.split(":", 1)[1] for k in self.usage.days.get(self.usage.day_key(), {})
+                      if k.startswith(self.TOKENS + ":"))
+        return {"title": self.title, "allowed": refusal is None, "why": refusal[1] if refusal else None,
+                "switch": self.allow_setting, "switched_on": self.allowed(),
+                "key_configured": self.missing_config() is None, "upstream": self.url(),
+                "max_in_flight": self.max_in_flight(), "in_flight": self.gate.in_flight,
+                "waiting": self.gate.waiting, "price_per_mtok": self.price(),
+                "output_price_per_mtok": self.output_price(),
+                "bot_daily_share": self.bot_share(), "max_request_bytes": self.max_bytes(),
+                "tokens_today": self.usage.today(self.TOKENS),
+                "input_tokens_today": self.usage.today(self.IN),
+                "output_tokens_today": self.usage.today(self.OUT), **self.money(),
+                "bots_today_usd": {b: round(self.spend(self.usage.today, b), 4) for b in bots},
+                "requests": self.requests, "errors": self.errors, "refused": self.refused}
+
+    def _refuse(self, status: int, why: str):
+        with self.lock:
+            self.refused += 1
+        log(f"refused jev: {why}")
+        return status, {self.error_key: why}
+
+    def handle(self, method, path, body, headers=None):
+        if method != "POST" or path != self.PATH:
+            return 404, {self.error_key: f"the proxy doesn't forward {method} {path}"}
+        headers = {k.lower(): v for k, v in (headers or {}).items()}
+        bot = (headers.get("x-poker-bot") or "").strip()
+        if not re.fullmatch(r"[A-Za-z0-9_.-]{1,64}", bot):
+            return self._refuse(400, "send the bot's name in an X-Poker-Bot header, so its spend is counted")
+        if len(body) > self.max_bytes():
+            return self._refuse(413, f"request is {len(body):,} bytes, over JEV_MAX_REQUEST_BYTES "
+                                     f"({self.max_bytes():,}): send a compact state, not the raw game state")
+        refusal = self.why_not_bot(bot)
+        if refusal:
+            return self._refuse(*refusal)
+        self.gate.acquire(self.max_in_flight())
+        try:
+            status, data = forward(self.url(), method, body,
+                                   {"Authorization": f"Bearer {self.settings.get('JEV_API_KEY')}"})
+        finally:
+            self.gate.release()
+        tin = tout = 0
+        if status < 400 and isinstance(data, bytes):
+            try:
+                u = json.loads(data).get("usage") or {}
+                tin, tout = int(u.get("input_tokens") or 0), int(u.get("output_tokens") or 0)
+            except (ValueError, AttributeError, TypeError):
+                tin = tout = 0
+        with self.lock:
+            self.requests += 1
+            if status >= 400:
+                self.errors += 1
+        if tin or tout:
+            self.usage.add_many({self.TOKENS: tin + tout, f"{self.TOKENS}:{bot}": tin + tout,
+                                 self.IN: tin, f"{self.IN}:{bot}": tin,
+                                 self.OUT: tout, f"{self.OUT}:{bot}": tout,
+                                 f"jev_requests:{bot}": 1})
+        return status, data
+
+
 def forward(url: str, method: str, body: bytes, headers: dict):
     """One upstream call. Returns (status, bytes); network failures are 504s."""
     headers = {"Content-Type": "application/json",
@@ -348,7 +534,8 @@ class Proxy:
         self.settings = settings or Settings()
         self.usage = usage or Usage()
         self.upstreams = {u.name: u for u in (SlumbotUpstream(self.settings, self.usage),
-                                               GTOWizardUpstream(self.settings, self.usage))}
+                                               GTOWizardUpstream(self.settings, self.usage),
+                                               JevUpstream(self.settings, self.usage))}
         self.started = time.strftime("%Y-%m-%dT%H:%M:%S")
         self.httpd = None
 
@@ -361,6 +548,8 @@ class Proxy:
             return self.upstreams["slumbot"]
         if path.startswith("/gtow/"):
             return self.upstreams["gto_wizard"]
+        if path.startswith("/jev/"):
+            return self.upstreams["jev"]
         return None
 
     def make_server(self, host: str = HOST, port: int = DEFAULT_PORT) -> ThreadingHTTPServer:
@@ -396,7 +585,7 @@ class Proxy:
                 if upstream is None:
                     return self._send(404, {"error_msg": f"no POST {self.path}"})
                 try:
-                    status, data = upstream.handle("POST", self.path, body)
+                    status, data = upstream.handle("POST", self.path, body, dict(self.headers))
                 except Exception as e:              # never take the proxy down
                     log(f"error {self.path}: {e!r}")
                     status, data = 502, {upstream.error_key: f"proxy error: {e}"}
@@ -424,8 +613,13 @@ def describe(status: dict) -> str:
     lines = []
     for u in status["upstreams"].values():
         state = "on" if u["allowed"] else f"OFF ({u['why']})"
+        if "daily_hands" in u:
+            used = f"{u['hands_today']:,}/{u['daily_hands']:,} hands today"
+        else:
+            used = (f"${u['spent_today_usd']:.2f} of ${u['allowance_today_usd']:.2f} today, "
+                    f"${u['spent_month_usd']:.2f} of ${u['monthly_budget_usd']:.2f} this month")
         lines.append(f"  {u['title']}: {state}; {u['in_flight']}/{u['max_in_flight']} in flight, "
-                     f"{u['waiting']} waiting; {u['hands_today']:,}/{u['daily_hands']:,} hands today")
+                     f"{u['waiting']} waiting; {used}")
     return "\n".join(lines)
 
 

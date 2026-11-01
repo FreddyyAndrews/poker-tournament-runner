@@ -41,6 +41,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from engine.game import PokerEngine, STARTING_STACK
+from sandbox import guard
 
 RUNNER_PATH    = Path(__file__).parent / "runner.py"
 SANDBOX_IMAGE  = os.environ.get("SANDBOX_IMAGE", "fullhouse-sandbox:latest")
@@ -206,8 +207,11 @@ class BotProcess:
             cmd = [sys.executable, "-u", str(RUNNER_PATH)]
 
         host_bot_py = os.path.join(self._mount_src, "bot.py")
+        # Locally the bot process is the runner itself, so it gets only a short,
+        # secret-free environment (sandbox/guard.py); the docker client needs
+        # the full one, and the container gets only what's passed with -e.
         env = {
-            **os.environ,
+            **(os.environ if self.use_docker else guard.safe_env(os.environ)),
             **extra_env,
             "BOT_PATH":     container_bot_py if self.use_docker else host_bot_py,
             "BOT_DATA_DIR": "/bot/data" if self.use_docker else os.path.join(self._mount_src, "data"),

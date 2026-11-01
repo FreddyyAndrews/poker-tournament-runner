@@ -531,7 +531,8 @@ def cmd_bench(args):
     try:
         _say(args, f"Benchmarking {args.bot}: {args.hands} hands x 2 seats per opponent")
         result = bench(args.bot, opponents=args.opponents, hands=args.hands, workers=args.workers,
-                       use_docker=True if args.docker else None, progress=[progress])
+                       use_docker=True if args.docker else None, progress=[progress],
+                       gauntlet=args.gauntlet)
     except ValueError as e:
         _fail(str(e), args.json)
     if args.json:
@@ -662,6 +663,32 @@ def cmd_compress(args):
         print("error: " + err, file=sys.stderr)
     if out["failed"]:
         sys.exit(1)
+
+
+def cmd_champions(args):
+    from arena import champions
+    if args.action in ("add", "remove") and not args.bot:
+        _fail(f"poker champions {args.action} needs a bot name", args.json)
+    try:
+        if args.action == "add":
+            e = champions.add(args.bot, note=args.note or "")
+            out = e
+            msg = f"Added champion {e['name']} (from {e['source']}, hash {e['hash']})"
+        elif args.action == "remove":
+            e = champions.remove(args.bot)
+            out = e
+            msg = f"Removed champion {e['name']}"
+        else:
+            out = champions.load_index()
+            msg = "\n".join(f"  {e['name']:<28} from {e['source']:<24} added {e['added'][:10]}"
+                             + (f"  {e['note']}" if e.get("note") else "") for e in out) or "  (none yet)"
+            msg = "Champions (poker bench <bot> --gauntlet plays them all):\n" + msg
+    except ValueError as e:
+        _fail(str(e), args.json)
+    if args.json:
+        _print_json(out)
+    else:
+        print(msg)
 
 
 def cmd_proxy(args):
@@ -821,6 +848,8 @@ def build_parser():
     bn.add_argument("--opponents", nargs="+",
                     help="opponents (default: every bot in bots/); may include slumbot and "
                          "gto_wizard, played through their APIs and scored luck-adjusted")
+    bn.add_argument("--gauntlet", action="store_true",
+                    help="play every champion (see `poker champions`) instead of the reference bots")
     bn.add_argument("--hands", type=int, default=500, help="hands per seat per opponent (default 500)")
     bn.add_argument("--workers", type=int, default=1)
     bn.add_argument("--docker", action="store_true")
@@ -860,6 +889,16 @@ def build_parser():
     cz.add_argument("--dry-run", action="store_true", help="only report what would be compressed")
     cz.add_argument("--json", action="store_true")
     cz.set_defaults(func=cmd_compress)
+
+    ch = sub.add_parser("champions", help="list, add or remove champions: the gauntlet bench's opponents",
+                        description="Champions are frozen copies of the strongest bots, kept in "
+                                    "champions/. `poker bench <bot> --gauntlet` plays them all. A "
+                                    "champion must pass the validator (no network bots).")
+    ch.add_argument("action", nargs="?", choices=["list", "add", "remove"], default="list")
+    ch.add_argument("bot", nargs="?", help="add: the bot to freeze; remove: the champion's name")
+    ch.add_argument("--note", help="add: why it earned its place")
+    ch.add_argument("--json", action="store_true")
+    ch.set_defaults(func=cmd_champions)
 
     px = sub.add_parser("proxy", help="start the outside-bot proxy that every Slumbot and GTO Wizard "
                                       "call goes through (or show its status)",

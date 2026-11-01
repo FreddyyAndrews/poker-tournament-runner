@@ -234,7 +234,21 @@ def load_bot(path: str):
     return module
 
 
+def _confine():
+    """Confine this process to the bot's folder (sandbox/guard.py) before the
+    bot is imported. Inside the Docker image the container isolates the bot
+    and guard.py isn't there."""
+    try:
+        import guard
+    except ImportError:
+        if not BOT_PATH.startswith("/bot/"):
+            print("runner: sandbox/guard.py not found: this bot runs unconfined", file=sys.stderr)
+        return
+    guard.install(os.path.dirname(os.path.abspath(BOT_PATH)))
+
+
 def main():
+    _confine()
     # Import the bot with its output captured, so module-level prints show up
     # in the warmup reply rather than on the protocol channel.
     load_log = _CallLog()

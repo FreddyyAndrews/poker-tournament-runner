@@ -190,41 +190,37 @@ def test_slow_decision_times_out_then_recovers(make_bot):
     assert bot.restarts == 0
 
 
-def test_frozen_process_is_restarted(make_bot, tmp_path, monkeypatch):
-    marker = tmp_path / "froze_once"
-    monkeypatch.setenv("TEST_MARKER", str(marker))
+def test_frozen_process_is_restarted(make_bot):
+    # Bots can't keep files or read test settings (sandbox/guard.py), so the
+    # bot freezes on hand 0 only, and the restarted process plays hand 1.
     bot = make_bot("""
         import os, signal
         def decide(state):
-            if state.get("type") != "warmup" and not os.path.exists(os.environ["TEST_MARKER"]):
-                open(os.environ["TEST_MARKER"], "w").close()
+            if state.get("type") != "warmup" and state.get("hand_num") == 0:
                 os.kill(os.getpid(), signal.SIGSTOP)   # whole process stops responding
             return {"action": "call"}
     """)
     bot.warmup()
     t0 = time.monotonic()
-    reply = bot.act(state(), time_limit_ms=200)
+    reply = bot.act(state(hand_num=0), time_limit_ms=200)
     assert time.monotonic() - t0 < 5
     assert reply["action"] == "fold" and reply["error"] == "host_timeout"
     assert bot.restarts == 1
-    assert bot.act(state(), time_limit_ms=200)["action"] == "call"
+    assert bot.act(state(hand_num=1), time_limit_ms=200)["action"] == "call"
 
 
-def test_crashed_process_is_restarted(make_bot, tmp_path, monkeypatch):
-    marker = tmp_path / "crashed_once"
-    monkeypatch.setenv("TEST_MARKER", str(marker))
+def test_crashed_process_is_restarted(make_bot):
     bot = make_bot("""
         import os
         def decide(state):
-            if state.get("type") != "warmup" and not os.path.exists(os.environ["TEST_MARKER"]):
-                open(os.environ["TEST_MARKER"], "w").close()
+            if state.get("type") != "warmup" and state.get("hand_num") == 0:
                 os._exit(1)
             return {"action": "call"}
     """)
     bot.warmup()
-    reply = bot.act(state())
+    reply = bot.act(state(hand_num=0))
     assert reply["action"] == "fold" and reply["error"] == "process_died"
-    assert bot.act(state())["action"] == "call"
+    assert bot.act(state(hand_num=1))["action"] == "call"
 
 
 def test_bot_disabled_after_max_restarts(make_bot):

@@ -15,7 +15,9 @@ __pycache__/
 node_modules/
 .venv/
 .bot_mounts/
-data/
+# run logs, bench history, usage counts: the top-level data/ only. A bot's own
+# data/ folder (weights, tables) is part of the bot and must be committed.
+/data/
 *.egg-info/
 
 references/

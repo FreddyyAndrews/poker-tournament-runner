@@ -1,0 +1,29 @@
+[
+  {
+    "name": "fable_bot_d2451d",
+    "bot": "fable_bot",
+    "hash": "d2451dcf756d5861",
+    "source": "my_bots/fable_bot",
+    "commit": "5510840f030415d7a12f3c728470c2e1cef04472",
+    "added": "2026-11-01T12:45:23",
+    "note": "first gauntlet: merged agent bot, Oct 2026"
+  },
+  {
+    "name": "opus_bot_26844e",
+    "bot": "opus_bot",
+    "hash": "26844e9e9667ed09",
+    "source": "my_bots/opus_bot",
+    "commit": "5510840f030415d7a12f3c728470c2e1cef04472",
+    "added": "2026-11-01T12:45:23",
+    "note": "first gauntlet: merged agent bot, Oct 2026"
+  },
+  {
+    "name": "sonnet_bot_0980bb",
+    "bot": "sonnet_bot",
+    "hash": "0980bb13520e91eb",
+    "source": "my_bots/sonnet_bot",
+    "commit": "5510840f030415d7a12f3c728470c2e1cef04472",
+    "added": "2026-11-01T12:45:23",
+    "note": "first gauntlet: merged agent bot, Oct 2026"
+  }
+]
