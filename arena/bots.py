@@ -63,21 +63,14 @@ class BotSpec:
                 "source": self.source}
 
 
-NOTES_DIR = "notes"     # a bot folder's notes/: the agent's journal, not part of the bot
-
-
 def bot_hash(path: str) -> str:
-    """Hash of everything the bot loads: bot.py, or a zip, or a whole dir.
-    A folder's top-level notes/ (the iteration journal, plan and status that
-    agents keep, see .claude/skills/iterate-bot) is left out, so writing
-    notes doesn't make a new version of the bot."""
+    """Hash of everything the bot loads: bot.py, or a zip, or a whole dir."""
     p = Path(path)
     h = hashlib.sha256()
     if p.is_dir():
         for f in sorted(p.rglob("*")):
-            rel = f.relative_to(p)
-            if f.is_file() and "__pycache__" not in f.parts and rel.parts[0] != NOTES_DIR:
-                h.update(str(rel).encode())
+            if f.is_file() and "__pycache__" not in f.parts:
+                h.update(str(f.relative_to(p)).encode())
                 h.update(f.read_bytes())
     else:
         h.update(p.read_bytes())
