@@ -3,6 +3,7 @@ fake upstream on localhost, with the real Slumbot and GTO Wizard clients.
 No network beyond 127.0.0.1."""
 import json
 import os
+import socket
 import sys
 import threading
 import time
@@ -284,7 +285,7 @@ def test_cli_status_without_a_proxy(capsys):
     assert "no outside-bot proxy" in capsys.readouterr().err
 
 
-# -- Jev: a spending budget ------------------------------------------------------
+# -- Jev: paced, not capped --------------------------------------------------------
 
 JEV_KEY = "jev-made-up-key-789"  # gitleaks:allow (made up, for the fake API)
 
@@ -312,7 +313,7 @@ def jev_secrets(secrets, upstream):
 
 
 def test_jev_gets_the_key_and_counts_each_bots_spend(run_proxy, upstream, jev_secrets):
-    jev_secrets(JEV_PRICE_PER_MTOK="2", JEV_MONTHLY_BUDGET_USD="1000")
+    jev_secrets(JEV_PRICE_PER_MTOK="2")
     url, _ = run_proxy()
     status, body = jev(url, "jev_bot")
     assert status == 200 and body["answers"]["action"]["choice"] == "call"
@@ -335,45 +336,69 @@ def test_jev_needs_the_bots_name_and_a_compact_request(run_proxy, upstream, jev_
     assert upstream.requests == []
 
 
-def test_jev_stops_at_the_days_allowance_and_each_bots_share(run_proxy, upstream, jev_secrets):
-    # $1.10 per request; a $93 month with 31 days -> today's allowance is $3 at most
-    jev_secrets(JEV_PRICE_PER_MTOK="1000", JEV_MONTHLY_BUDGET_USD="93", JEV_BOT_DAILY_SHARE="0.5")
+def test_pacer_spaces_starts_evenly_in_arrival_order():
+    clock = [100.0]
+    slept = []
+
+    def sleep(d):
+        slept.append(round(d, 6))
+        clock[0] += d
+    pacer = proxy.Pacer(clock=lambda: clock[0], sleep=sleep)
+    for _ in range(4):                                 # 4 arrive at once, at 60 a minute
+        clock[0] = 100.0
+        pacer.wait(60)
+    assert slept == [1.0, 2.0, 3.0]                    # the first goes at once, then one a second
+    clock[0] = 200.0
+    pacer.wait(60)                                     # after a quiet spell, no wait
+    assert slept == [1.0, 2.0, 3.0]
+    assert pacer.last_minute() == 1
+
+
+def test_jev_is_slowed_to_the_rate_not_refused(run_proxy, upstream, jev_secrets):
+    jev_secrets(JEV_MAX_REQUESTS_PER_MINUTE="600")    # one every 0.1 s
+    url, _ = run_proxy()
+    results = []
+    t0 = time.monotonic()
+    threads = [threading.Thread(target=lambda: results.append(jev(url, "jev_bot")[0])) for _ in range(6)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert results == [200] * 6
+    assert time.monotonic() - t0 >= 0.45               # 6 starts, 0.1 s apart
+    s = proxy.fetch_status(url)["upstreams"]["jev"]
+    assert s["requests_last_minute"] == 6 and s["max_requests_per_minute"] == 600
+    assert s["refused"] == 0 and len(upstream.requests) == 6
+
+
+def test_jev_drops_a_request_whose_bot_hung_up(run_proxy, upstream, jev_secrets):
+    jev_secrets(JEV_MAX_REQUESTS_PER_MINUTE="60")     # one a second
     url, p = run_proxy()
-    days_left = p.upstreams["jev"].money()["days_left_in_month"]
-    allowance = 93 / days_left
-    spent = 0.0
-    while spent < allowance * 0.5:                    # one bot uses its half
-        assert jev(url, "a")[0] == 200
-        spent += 1.1
-    status, body = jev(url, "a")
-    assert status == 402 and "share" in body["detail"]
-    while spent < allowance:                          # another bot uses the rest
-        assert jev(url, "b")[0] == 200
-        spent += 1.1
-    status, body = jev(url, "c")
-    assert status == 402 and "budget for today" in body["detail"]
+    assert jev(url, "jev_bot")[0] == 200               # takes the slot; the next waits ~1 s
+    host, port = url.removeprefix("http://").split(":")
+    body = b'{"state": "s", "questions": {}}'
+    sock = socket.create_connection((host, int(port)))
+    sock.sendall(b"POST /jev/v1/systemone HTTP/1.1\r\nHost: x\r\nX-Poker-Bot: jev_bot\r\n"
+                 b"Content-Type: application/json\r\nContent-Length: " + str(len(body)).encode()
+                 + b"\r\n\r\n" + body)
+    time.sleep(0.2)
+    sock.close()                                       # the bot's decision timed out
+    deadline = time.monotonic() + 5
+    while p.upstreams["jev"].dropped == 0 and time.monotonic() < deadline:
+        time.sleep(0.05)
+    assert p.upstreams["jev"].dropped == 1
+    assert len(upstream.requests) == 1                 # never sent, never paid for
 
 
-def test_jev_spreads_the_month_over_the_days_left(tmp_path, jev_secrets, secrets):
-    # it is the 21st of a 30-day month and $7 of a $10 budget went earlier this month
+def test_jev_reports_the_months_spend(tmp_path, jev_secrets, secrets):
     now = time.mktime((2026, 11, 21, 12, 0, 0, 0, 0, -1))
     usage = proxy.Usage(tmp_path / "u.json", now=lambda: now)
-    usage.days = {"2026-11-03": {"jev_tokens": 7_000_000}, "2026-10-30": {"jev_tokens": 99_000_000}}
-    jev_secrets(JEV_PRICE_PER_MTOK="1", JEV_MONTHLY_BUDGET_USD="10")
+    usage.days = {"2026-11-03": {"jev_tokens": 7_000_000}, "2026-10-30": {"jev_tokens": 99_000_000},
+                  "2026-11-21": {"jev_tokens": 500_000}}
+    jev_secrets(JEV_PRICE_PER_MTOK="1")
     j = proxy.Proxy(proxy.Settings(secrets.path, environ={}), usage).upstreams["jev"]
-    m = j.money()
-    assert m["days_left_in_month"] == 10 and m["spent_month_usd"] == 7.0      # October doesn't count
-    assert m["allowance_today_usd"] == 0.3                                   # $3 left over 10 days
-
-
-def test_jev_monthly_budget_is_a_hard_stop(tmp_path, jev_secrets, secrets):
-    now = time.mktime((2026, 11, 21, 12, 0, 0, 0, 0, -1))
-    usage = proxy.Usage(tmp_path / "u.json", now=lambda: now)
-    usage.days = {"2026-11-20": {"jev_tokens": 10_000_000}}
-    jev_secrets(JEV_PRICE_PER_MTOK="1", JEV_MONTHLY_BUDGET_USD="10")
-    j = proxy.Proxy(proxy.Settings(secrets.path, environ={}), usage).upstreams["jev"]
-    status, why = j.why_not_bot("jev_bot")
-    assert status == 402 and "monthly budget" in why
+    assert j.money() == {"spent_today_usd": 0.5, "spent_month_usd": 7.5}    # October doesn't count
+    assert j.why_not() is None                                               # spend never refuses
 
 
 def test_jev_can_be_switched_off(run_proxy, upstream, jev_secrets):
@@ -385,7 +410,7 @@ def test_jev_can_be_switched_off(run_proxy, upstream, jev_secrets):
 
 
 def test_jev_prices_input_and_output_separately(run_proxy, upstream, jev_secrets):
-    jev_secrets(JEV_PRICE_PER_MTOK="1", JEV_OUTPUT_PRICE_PER_MTOK="10", JEV_MONTHLY_BUDGET_USD="1000")
+    jev_secrets(JEV_PRICE_PER_MTOK="1", JEV_OUTPUT_PRICE_PER_MTOK="10")
     url, _ = run_proxy()
     assert jev(url, "jev_bot")[0] == 200                     # 1,000 in at $1/M + 100 out at $10/M
     s = proxy.fetch_status(url)["upstreams"]["jev"]

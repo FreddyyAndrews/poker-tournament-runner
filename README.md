@@ -132,14 +132,13 @@ Two strong outside bots can be played through their own APIs, as `slumbot` or `g
 | `GTO_WIZARD_DAILY_HANDS_PER_BOT` | 5,000 | GTO Wizard hands per day for one bot |
 | `ALLOW_JEV` | `true` | Jev, the model the jev bots ask, on or off |
 | `JEV_API_KEY` | | Jev's key; the proxy adds it, bots never see it |
-| `JEV_MONTHLY_BUDGET_USD` | 10 | Jev spend per month, spread evenly over the days left |
-| `JEV_PRICE_PER_MTOK` | 0.04 | Dollars per million Jev input tokens, TypeSafe's starting price |
-| `JEV_OUTPUT_PRICE_PER_MTOK` | the input price | Dollars per million Jev output tokens; set it if output costs more |
-| `JEV_BOT_DAILY_SHARE` | 0.5 | The most one bot may spend of a day's Jev allowance |
+| `JEV_MAX_REQUESTS_PER_MINUTE` | 300 | Jev requests started per minute, across everyone; more wait their turn |
+| `JEV_PRICE_PER_MTOK` | 0.04 | Dollars per million Jev input tokens, for the spend shown in the status |
+| `JEV_OUTPUT_PRICE_PER_MTOK` | the input price | Dollars per million Jev output tokens, likewise |
 | `JEV_MAX_REQUEST_BYTES` | 16,000 | Larger Jev requests are refused, about 4k tokens |
 | `POKER_PROXY_URL` (environment) | `http://127.0.0.1:8766` | Where matches find the proxy |
 
-**Jev through the proxy.** The jev bots call Jev at `http://127.0.0.1:8766/jev/v1/systemone` with only an `X-Poker-Bot: <name>` header. The proxy adds the key, counts each reply's tokens per bot, and refuses with HTTP 402 once today's allowance or the bot's share is spent. Today's allowance is what's left of the month divided by the days left, so the budget can't be spent in a day. `poker proxy --status` shows today's and the month's spend and each bot's share.
+**Jev through the proxy.** The jev bots call Jev at `http://127.0.0.1:8766/jev/v1/systemone` with only an `X-Poker-Bot: <name>` header. The proxy adds the key and paces requests to `JEV_MAX_REQUESTS_PER_MINUTE` across every bot: over that rate a request waits its turn, so bots run slower rather than being refused. A request whose bot gave up waiting is dropped, not sent. There is no spending cap in the proxy: Jev's own account limit stops spending, and its refusals reach the bot as they are. The proxy counts each reply's tokens per bot, and `poker proxy --status` shows the request rate and today's and the month's spend.
 
 - **The game is fixed:** heads-up, 200bb stacks at 50/100, reset every hand (like `--cash`). `--freezeout`, `--blinds`, `--stack` and `--seed` are refused.
 - **They deal**, on their own server: you see your cards, the board and the action, and theirs when the hand ends. The match is logged like any other (live view, replay, analysis), but there is no seed, so it can't be replayed or duplicated. `poker verify` checks only the chip accounting.

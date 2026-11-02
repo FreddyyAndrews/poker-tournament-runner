@@ -42,7 +42,7 @@ Read `bots/template/bot.py` for the full `game_state` schema, and `bots/shark`, 
 - **2 seconds per decision** (a timeout or crash folds). Libraries: the standard library, `eval7`, `numpy`, `scipy`, `treys` and `scikit-learn`.
 - No network, no file writes, no subprocesses. Locally `sandbox/guard.py` enforces this too: a bot can open only files in its own folder, gets no secrets from the environment, and can connect only to this machine.
 - An optional read-only `data/` next to `bot.py` (tables, trained weights, up to 20 MB a file) loads at import time. It is part of the bot: commit it. Train anything offline, with scripts in your own folder.
-- **A bot that asks Jev** (TypeSafe's decision model) calls the proxy at `http://127.0.0.1:8766/jev/v1/systemone` with an `X-Poker-Bot: <name>` header and no key; see `my_bots/jev_bot`. Jev costs money: the proxy enforces a daily budget and a share per bot, and refuses (HTTP 402) once it's spent. Check `$POKER proxy --status` before a long run, keep requests compact, and throw away results from matches where it fell back to check/fold.
+- **A bot that asks Jev** (TypeSafe's decision model) calls the proxy at `http://127.0.0.1:8766/jev/v1/systemone` with an `X-Poker-Bot: <name>` header and no key; see `my_bots/jev_bot`. Jev costs money and the proxy doesn't cap it: it paces requests across every bot, so under load your decisions wait and can time out (give a jev bot more time in a match with `--time-limit-ms`). `$POKER proxy --status` shows the rate and the spend. Keep requests compact, don't run more Jev matches than a question needs, and throw away results from matches where it fell back to check/fold.
 - Validate after edits: `$PY sandbox/validator.py my_bots/<name>/bot.py` must PASS (a bot that needs the network fails only on its HTTP import).
 
 ## Tools
@@ -58,7 +58,7 @@ All run from your worktree.
 | `$POKER bench my_bots/<name> --opponents slumbot --hands 1000` | Slumbot, a strong outside bot, through the proxy: no seeds, scored by its luck-adjusted bb/100. Its CI is wide (about ±140 at 200 hands), so compare versions over 2,000+ hands. |
 | `$PY $S/analyze_match.py <match id or folder> <name>` | What went wrong in a match: actions by street, think time, errors, the biggest losing hands with your logs and `debug` |
 | `$S/opponents.sh [--names]` | Every bot you can play by name, including other agents' worktree bots |
-| `$POKER proxy --status` | Slumbot hands and Jev spend today, and whether each is on |
+| `$POKER proxy --status` | Slumbot hands today, Jev's request rate and spend, and whether each is on |
 | `$PY $S/pr_report.py <name> [--run ID ...] [--match KEY ...]` | A Markdown metrics section for a PR, from your bench history and runs |
 | `http://127.0.0.1:8765` | The web UI: watch matches, inspect decisions, play your bot yourself |
 

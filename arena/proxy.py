@@ -27,22 +27,21 @@ What it does, per outside bot:
     GTO Wizard: POST /hands and POST /hands/<id>/act).
 
 Jev (TypeSafe's System One model, which the jev bots ask for decisions) goes
-through it too, at POST /jev/v1/systemone, with a spending budget instead of
-a hand cap:
+through it too, at POST /jev/v1/systemone. It is paced, not capped: spending
+limits are enforced by Jev's own account, whose refusals reach the bot as is.
   - JEV_API_KEY is added here; bots send no key, only X-Poker-Bot: <name>.
-  - Every reply's input and output tokens are counted per bot per day. Spend
-    is input tokens x JEV_PRICE_PER_MTOK (dollars per million input tokens,
-    default 0.04, TypeSafe's listed starting price) plus output tokens x
-    JEV_OUTPUT_PRICE_PER_MTOK (default: the input price; set it if output
-    costs more). Output is about 8% of a jev bot's tokens.
-  - JEV_MONTHLY_BUDGET_USD (default 10) is spread evenly over the days left
-    in the month: today's allowance is what's left of the month divided by
-    the days left, so nothing can spend the month in a day. One bot may use
-    at most JEV_BOT_DAILY_SHARE of today's allowance (default 0.5).
+  - Requests start at most JEV_MAX_REQUESTS_PER_MINUTE (default 300) across
+    every bot, evenly spaced, first come, first served. Over that rate a
+    request waits its turn, so bots just run slower. A request whose bot hung
+    up while waiting (its decision timed out) is dropped, not sent.
+  - Every reply's input and output tokens are counted per bot per day, and
+    priced for the status only: input tokens x JEV_PRICE_PER_MTOK (dollars
+    per million, default 0.04, TypeSafe's listed starting price) plus output
+    tokens x JEV_OUTPUT_PRICE_PER_MTOK (default: the input price).
   - Requests over JEV_MAX_REQUEST_BYTES (default 16,000, about 4k tokens)
     are refused, so a bot can't send a huge context.
   - ALLOW_JEV (default on) switches it off entirely.
-Refusals: 402 (budget), 413 (too large), 400 (no bot name), 403 (off).
+Refusals: 413 (too large), 400 (no bot name), 403 (off).
 
 Its own refusals are HTTP 403 with a JSON body ({"error_msg": ...} for
 Slumbot, {"detail": ...} for GTO Wizard and Jev) saying why. GET /status
@@ -54,6 +53,7 @@ Standard library only, so it starts fast and doesn't import the engine.
 import json
 import os
 import re
+import socket
 import sys
 import threading
 import time
@@ -155,6 +155,55 @@ class Gate:
     @property
     def waiting(self) -> int:
         return len(self.queue)
+
+
+class Pacer:
+    """Starts at most `per_minute` requests a minute, evenly spaced, in the
+    order they arrive: each caller reserves the next free start time and
+    sleeps until it. `clock` and `sleep` are swappable for tests."""
+
+    def __init__(self, clock=time.monotonic, sleep=time.sleep):
+        self.clock, self.sleep = clock, sleep
+        self.lock = threading.Lock()
+        self.next_start = 0.0
+        self.waiting = 0
+        self.started = deque()              # start times in the last minute, for the status
+
+    def wait(self, per_minute: int):
+        with self.lock:
+            now = self.clock()
+            start = max(now, self.next_start)
+            self.next_start = start + 60.0 / max(1, per_minute)
+            self.waiting += 1
+        try:
+            if start > now:
+                self.sleep(start - now)
+        finally:
+            with self.lock:
+                self.waiting -= 1
+                self.started.append(start)
+
+    def last_minute(self) -> int:
+        with self.lock:
+            while self.started and self.started[0] < self.clock() - 60:
+                self.started.popleft()
+            return len(self.started)
+
+
+def client_gone(sock) -> bool:
+    """True if the client closed its connection (a bot whose decision timed
+    out while its request waited), without consuming anything it sent."""
+    try:
+        timeout = sock.gettimeout()
+        sock.setblocking(False)
+        try:
+            return sock.recv(1, socket.MSG_PEEK) == b""
+        finally:
+            sock.settimeout(timeout)
+    except (BlockingIOError, InterruptedError):
+        return False
+    except OSError:
+        return True
 
 
 class Usage:
@@ -356,8 +405,8 @@ class GTOWizardUpstream(Upstream):
 
 
 class JevUpstream(Upstream):
-    """Jev, TypeSafe's System One decision model, for the jev bots: a
-    spending budget rather than a hand cap (see the module docstring)."""
+    """Jev, TypeSafe's System One decision model, for the jev bots: paced
+    to a rate rather than capped (see the module docstring)."""
     name, title = "jev", "Jev"
     allow_setting, allow_default = "ALLOW_JEV", True
     in_flight_setting, in_flight_default = "JEV_PROXY_MAX_IN_FLIGHT", 16
@@ -367,6 +416,12 @@ class JevUpstream(Upstream):
     TOKENS = "jev_tokens"               # input + output, per day (and ":<bot>")
     IN, OUT = "jev_in", "jev_out"       # the split, which prices them
     DEFAULT_PRICE = 0.04                # TypeSafe's starting input price, $ per 1M tokens
+    DEFAULT_PER_MINUTE = 300
+
+    def __init__(self, settings: Settings, usage: Usage):
+        super().__init__(settings, usage)
+        self.pacer = Pacer()
+        self.dropped = 0
 
     def _float(self, name, default) -> float:
         try:
@@ -382,17 +437,8 @@ class JevUpstream(Upstream):
         """Dollars per million output tokens (the input price unless set)."""
         return self._float("JEV_OUTPUT_PRICE_PER_MTOK", self.price())
 
-    def budget(self) -> float:
-        try:
-            return float(self.settings.get("JEV_MONTHLY_BUDGET_USD") or 10)
-        except ValueError:
-            return 10.0
-
-    def bot_share(self) -> float:
-        try:
-            return float(self.settings.get("JEV_BOT_DAILY_SHARE") or 0.5)
-        except ValueError:
-            return 0.5
+    def per_minute(self) -> int:
+        return self.settings.number("JEV_MAX_REQUESTS_PER_MINUTE", self.DEFAULT_PER_MINUTE)
 
     def max_bytes(self) -> int:
         return self.settings.number("JEV_MAX_REQUEST_BYTES", 16_000)
@@ -406,63 +452,42 @@ class JevUpstream(Upstream):
         legacy = max(0, total - tin - tout)
         return ((tin + legacy) * self.price() + tout * self.output_price()) / 1e6
 
-    def money(self, bot: str = None) -> dict:
-        """This month's and today's spend, and today's allowances, in dollars."""
-        t = time.localtime(self.usage.now())
-        days_in_month = (time.mktime((t.tm_year + t.tm_mon // 12, t.tm_mon % 12 + 1, 1, 12, 0, 0, 0, 0, -1))
-                         - time.mktime((t.tm_year, t.tm_mon, 1, 12, 0, 0, 0, 0, -1))) / 86400
-        days_left = int(round(days_in_month)) - t.tm_mday + 1
-        before = self.spend(self.usage.month_before_today)
+    def money(self) -> dict:
+        """Today's and this month's spend, in dollars, at the configured prices."""
         today = self.spend(self.usage.today)
-        allowance = max(0.0, self.budget() - before) / max(1, days_left)
-        out = {"monthly_budget_usd": round(self.budget(), 4), "spent_month_usd": round(before + today, 4),
-               "spent_today_usd": round(today, 4), "allowance_today_usd": round(allowance, 4),
-               "days_left_in_month": days_left}
-        if bot:
-            out["bot_spent_today_usd"] = round(self.spend(self.usage.today, bot), 4)
-            out["bot_allowance_today_usd"] = round(allowance * self.bot_share(), 4)
-        return out
+        return {"spent_today_usd": round(today, 4),
+                "spent_month_usd": round(self.spend(self.usage.month_before_today) + today, 4)}
 
     def missing_config(self):
         if not self.settings.get("JEV_API_KEY"):
             return "Jev: JEV_API_KEY is not set in the repo's .env."
         return None
 
-    def why_not_bot(self, bot: str):
-        """Why a request from `bot` is refused now, or None."""
+    def why_not(self, starts_hand: bool = False):
+        """Why a request is refused now, or None."""
         if not self.allowed():
-            return 403, "Jev is turned off: ALLOW_JEV is false in the repo's .env (only the owner can change it)."
-        missing = self.missing_config()
-        if missing:
-            return 403, missing
-        m = self.money(bot)
-        if m["spent_month_usd"] >= m["monthly_budget_usd"]:
-            return 402, (f"Jev's monthly budget of ${m['monthly_budget_usd']:.2f} is spent "
-                         "(JEV_MONTHLY_BUDGET_USD). It resets on the 1st.")
-        if m["spent_today_usd"] >= m["allowance_today_usd"]:
-            return 402, (f"Jev's budget for today (${m['allowance_today_usd']:.2f}: what's left this month "
-                         f"over the {m['days_left_in_month']} days left) is spent. It resets at midnight.")
-        if bot and m["bot_spent_today_usd"] >= m["bot_allowance_today_usd"]:
-            return 402, (f"{bot} has spent its share of Jev's budget today (${m['bot_allowance_today_usd']:.2f}, "
-                         "JEV_BOT_DAILY_SHARE of the day's allowance). It resets at midnight.")
-        return None
+            return "Jev is turned off: ALLOW_JEV is false in the repo's .env (only the owner can change it)."
+        return self.missing_config()
 
     def status(self) -> dict:
-        refusal = self.why_not_bot(None)
+        why = self.why_not()
         bots = sorted(k.split(":", 1)[1] for k in self.usage.days.get(self.usage.day_key(), {})
                       if k.startswith(self.TOKENS + ":"))
-        return {"title": self.title, "allowed": refusal is None, "why": refusal[1] if refusal else None,
+        return {"title": self.title, "allowed": why is None, "why": why,
                 "switch": self.allow_setting, "switched_on": self.allowed(),
                 "key_configured": self.missing_config() is None, "upstream": self.url(),
                 "max_in_flight": self.max_in_flight(), "in_flight": self.gate.in_flight,
-                "waiting": self.gate.waiting, "price_per_mtok": self.price(),
-                "output_price_per_mtok": self.output_price(),
-                "bot_daily_share": self.bot_share(), "max_request_bytes": self.max_bytes(),
+                "waiting": self.gate.waiting + self.pacer.waiting,
+                "max_requests_per_minute": self.per_minute(),
+                "requests_last_minute": self.pacer.last_minute(),
+                "price_per_mtok": self.price(), "output_price_per_mtok": self.output_price(),
+                "max_request_bytes": self.max_bytes(),
                 "tokens_today": self.usage.today(self.TOKENS),
                 "input_tokens_today": self.usage.today(self.IN),
                 "output_tokens_today": self.usage.today(self.OUT), **self.money(),
                 "bots_today_usd": {b: round(self.spend(self.usage.today, b), 4) for b in bots},
-                "requests": self.requests, "errors": self.errors, "refused": self.refused}
+                "requests": self.requests, "errors": self.errors, "refused": self.refused,
+                "dropped": self.dropped}
 
     def _refuse(self, status: int, why: str):
         with self.lock:
@@ -470,7 +495,8 @@ class JevUpstream(Upstream):
         log(f"refused jev: {why}")
         return status, {self.error_key: why}
 
-    def handle(self, method, path, body, headers=None):
+    def handle(self, method, path, body, headers=None, gone=None):
+        """`gone()` says whether the client hung up; checked after pacing."""
         if method != "POST" or path != self.PATH:
             return 404, {self.error_key: f"the proxy doesn't forward {method} {path}"}
         headers = {k.lower(): v for k, v in (headers or {}).items()}
@@ -480,9 +506,14 @@ class JevUpstream(Upstream):
         if len(body) > self.max_bytes():
             return self._refuse(413, f"request is {len(body):,} bytes, over JEV_MAX_REQUEST_BYTES "
                                      f"({self.max_bytes():,}): send a compact state, not the raw game state")
-        refusal = self.why_not_bot(bot)
-        if refusal:
-            return self._refuse(*refusal)
+        why = self.why_not()
+        if why:
+            return self._refuse(403, why)
+        self.pacer.wait(self.per_minute())
+        if gone and gone():
+            with self.lock:
+                self.dropped += 1
+            return 499, {self.error_key: "the bot hung up while its request waited for the pace"}
         self.gate.acquire(self.max_in_flight())
         try:
             status, data = forward(self.url(), method, body,
@@ -584,8 +615,9 @@ class Proxy:
                 upstream = proxy.upstream_for(self.path)
                 if upstream is None:
                     return self._send(404, {"error_msg": f"no POST {self.path}"})
+                extra = {"gone": lambda: client_gone(self.connection)} if upstream.name == "jev" else {}
                 try:
-                    status, data = upstream.handle("POST", self.path, body, dict(self.headers))
+                    status, data = upstream.handle("POST", self.path, body, dict(self.headers), **extra)
                 except Exception as e:              # never take the proxy down
                     log(f"error {self.path}: {e!r}")
                     status, data = 502, {upstream.error_key: f"proxy error: {e}"}
@@ -616,8 +648,9 @@ def describe(status: dict) -> str:
         if "daily_hands" in u:
             used = f"{u['hands_today']:,}/{u['daily_hands']:,} hands today"
         else:
-            used = (f"${u['spent_today_usd']:.2f} of ${u['allowance_today_usd']:.2f} today, "
-                    f"${u['spent_month_usd']:.2f} of ${u['monthly_budget_usd']:.2f} this month")
+            rate = (f"{u['requests_last_minute']}/{u['max_requests_per_minute']} requests in the last minute; "
+                    if "max_requests_per_minute" in u else "")     # an older proxy has no pace
+            used = f"{rate}${u['spent_today_usd']:.2f} today, ${u['spent_month_usd']:.2f} this month"
         lines.append(f"  {u['title']}: {state}; {u['in_flight']}/{u['max_in_flight']} in flight, "
                      f"{u['waiting']} waiting; {used}")
     return "\n".join(lines)
