@@ -48,6 +48,33 @@ export function RunView({ runId }: { runId: string }) {
     setVerify(await r.json())
   }
 
+  const nowPlaying = (
+        <section className="section now-playing" data-testid="now-playing">
+          <h2>Now playing</h2>
+          {live.map(k => {
+            const c = p?.live?.[k]
+            return (
+            <div key={k} className="np-row" data-testid="np-row">
+              <span className="pill live"><span className="dot" />Live</span>
+              <span>{k.split('/').pop()}</span>
+              {c && <span className="np-chips num" data-testid="np-chips">
+                {c.players.map((n: string) => {
+                  // cash: stacks reset every hand, so the net is the number; otherwise stack (change)
+                  const net = <span className={c.delta[n] > 0 ? 'up' : c.delta[n] < 0 ? 'down' : 'muted'}>
+                    {c.delta[n] > 0 ? '+' : c.delta[n] === 0 ? '\u00b1' : ''}{fmt(c.delta[n])}</span>
+                  return c.cash
+                    ? <span key={n}><span className="muted">{n}</span> {net}</span>
+                    : <span key={n}><span className="muted">{n}</span> {fmt(c.stacks[n])} ({net})</span>
+                })}
+                <span className="muted">hand {fmt(c.hand)}{c.hands ? ` / ${fmt(c.hands)}` : ''}</span>
+              </span>}
+              <span className="spacer" />
+              <a href={`#/match/${k}`}><button className="primary small" data-testid="watch">Watch</button></a>
+            </div>
+          )})}
+        </section>
+  )
+
   return (
     <div className="container wide" data-testid="run-view">
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
@@ -117,32 +144,7 @@ export function RunView({ runId }: { runId: string }) {
         </>
       )}
 
-      {live.length > 0 && (
-        <section className="section now-playing" data-testid="now-playing">
-          <h2>Now playing</h2>
-          {live.map(k => {
-            const c = p?.live?.[k]
-            return (
-            <div key={k} className="np-row" data-testid="np-row">
-              <span className="pill live"><span className="dot" />Live</span>
-              <span>{k.split('/').pop()}</span>
-              {c && <span className="np-chips num" data-testid="np-chips">
-                {c.players.map((n: string) => {
-                  // cash: stacks reset every hand, so the net is the number; otherwise stack (change)
-                  const net = <span className={c.delta[n] > 0 ? 'up' : c.delta[n] < 0 ? 'down' : 'muted'}>
-                    {c.delta[n] > 0 ? '+' : c.delta[n] === 0 ? '\u00b1' : ''}{fmt(c.delta[n])}</span>
-                  return c.cash
-                    ? <span key={n}><span className="muted">{n}</span> {net}</span>
-                    : <span key={n}><span className="muted">{n}</span> {fmt(c.stacks[n])} ({net})</span>
-                })}
-                <span className="muted">hand {fmt(c.hand)}{c.hands ? ` / ${fmt(c.hands)}` : ''}</span>
-              </span>}
-              <span className="spacer" />
-              <a href={`#/match/${k}`}><button className="primary small" data-testid="watch">Watch</button></a>
-            </div>
-          )})}
-        </section>
-      )}
+      {format !== 'qualifier' && live.length > 0 && nowPlaying}
 
       {p?.kind === 'round_robin' && active && p.chips?.some((c: any) => c.delta || c.playing) && (
         <section className="section" data-testid="chips-so-far">
@@ -191,6 +193,11 @@ export function RunView({ runId }: { runId: string }) {
             </tbody>
           </table>
         </section>
+      )}
+
+      {format === 'qualifier' && live.length > 0 && (
+        <details className="section"><summary className="muted" style={{ cursor: 'pointer' }}>
+          Now playing ({live.length})</summary>{nowPlaying}</details>
       )}
 
       {run.kind === 'run' && run.matches && format !== 'mtt' && (

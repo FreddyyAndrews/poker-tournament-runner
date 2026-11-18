@@ -83,3 +83,27 @@ def test_qualifier_stops_when_the_budget_cant_fit_another_cycle(tmp_path):
     res = formats.run(cfg, run_id="q", runs_dir=tmp_path, workers=2)
     assert res["cycles"] == 1                       # the first cycle always plays, then time is up
     shutil.rmtree(tmp_path / "q")
+
+
+def test_broadcast_replays_a_finished_bracket_as_a_new_run(tmp_path):
+    from arena.broadcast import broadcast
+    cfg = formats.RunConfig(format="bracket", bots=["shark", "aggressor", "mathematician", "template"],
+                            blinds="turbo", mode="freezeout", hands=2000, seeding="given", seed=11)
+    src = formats.run(cfg, run_id="final", runs_dir=tmp_path, workers=2)
+    seen = []
+    out = broadcast("final", "final_show", tmp_path, name="Final", pace_ms=0,
+                    progress=[lambda e: seen.append((e["event"], e["match_id"]))])
+    order = [m["match_id"] for m in src["matches"]]
+    assert seen == [(ev, m) for m in order for ev in ("match_start", "match_done")]   # in playing order
+    assert out["status"] == "complete" and out["broadcast"] is True
+    assert out["standings"] == src["standings"]
+    assert verify.verify_run_dir(tmp_path / "final_show")["ok"]
+
+
+def test_a_qualifier_is_never_paced(tmp_path):
+    from arena.server.jobs import JobManager
+    jobs = JobManager(tmp_path)
+    job = jobs.start_run({"format": "qualifier", "bots": ["template", "aggressor"], "blinds": "turbo",
+                          "max_cycles": 1, "pace_ms": 600})
+    job.thread.join(120)
+    assert job.status == "complete"

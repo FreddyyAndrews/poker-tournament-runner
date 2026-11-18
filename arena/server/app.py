@@ -77,6 +77,13 @@ class IntakeRequest(BaseModel):
     only: Optional[List[str]] = None
 
 
+class BroadcastRequest(BaseModel):
+    source: str                    # a finished match or run
+    id: Optional[str] = None
+    name: Optional[str] = None
+    pace_ms: int = 900
+
+
 class RunRequest(BaseModel):
     format: str
     bots: List[str]
@@ -273,6 +280,14 @@ def create_app(runs_dir: Path = DEFAULT_RUNS_DIR, port: int = 8765) -> FastAPI:
         return {"job": job.to_dict(), "run_id": job.id, "kind": job.kind}
 
     # -- jobs ------------------------------------------------------------------
+
+    @app.post("/api/broadcast", status_code=201)
+    def start_broadcast(req: BroadcastRequest):
+        try:
+            job = jobs.start_broadcast(req.model_dump())
+        except (ValueError, FileNotFoundError) as e:
+            raise bad_request(e)
+        return {"run_id": job.id, "job": job.to_dict()}
 
     @app.get("/api/jobs")
     def list_jobs():

@@ -227,9 +227,12 @@ export function QualifierPanel({ p, active }: { p: any; active: boolean }) {
     const t = window.setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(t)
   }, [active])
-  const [seenAt] = useState(Date.now())
+  // p.elapsed_s is the server's count when this update was fetched; between
+  // updates, add only the time since that fetch
+  const [fetchedAt, setFetchedAt] = useState(Date.now())
+  useEffect(() => setFetchedAt(Date.now()), [p.elapsed_s])
   const budget = (p.time_budget_min ?? 0) * 60
-  const elapsed = p.elapsed_s != null ? p.elapsed_s + (now - seenAt) / 1000 : null
+  const elapsed = p.elapsed_s != null ? p.elapsed_s + Math.max(0, now - fetchedAt) / 1000 : null
   const times: number[] = p.cycle_seconds ?? []
   const typical = times.length ? times.reduce((a, b) => a + b, 0) / times.length : null
   const done = p.cycles_complete?.length ?? 0

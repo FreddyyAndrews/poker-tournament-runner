@@ -205,10 +205,36 @@ class JobManager:
                             job.live.remove(key)
                         job.matches_done += 1
 
+            # a qualifier is about getting through as many cycles as possible: never paced
+            pace_ms = 0 if cfg.format == "qualifier" else (p.get("pace_ms") or 0)
+
             def work():
                 formats.run(cfg, run_id=run_id, runs_dir=self.runs_dir, workers=workers,
                             use_docker=use_docker, progress=[progress],
-                            pace_ms=p.get("pace_ms") or 0, cancel=job.cancel)
+                            pace_ms=pace_ms, cancel=job.cancel)
+        return self._launch(job, work)
+
+    def start_broadcast(self, p: dict) -> Job:
+        """p: source (a finished match or run), id, name, pace_ms. Replays it
+        as a new run that is live while it plays (arena/broadcast.py)."""
+        from arena.broadcast import broadcast
+        run_id = p.get("id") or _stamp("broadcast", None)
+        self._check_new(run_id)
+        job = Job(id=run_id, kind="run", params=p)
+
+        def progress(e):
+            key = f"{run_id}/matches/{e['match_id']}"
+            with self._lock:
+                if e["event"] == "match_start" and key not in job.live:
+                    job.live.append(key)
+                elif e["event"] == "match_done":
+                    if key in job.live:
+                        job.live.remove(key)
+                    job.matches_done += 1
+
+        def work():
+            broadcast(p["source"], run_id, self.runs_dir, name=p.get("name"),
+                      pace_ms=p.get("pace_ms") or 900, cancel=job.cancel, progress=[progress])
         return self._launch(job, work)
 
     def cancel(self, job_id) -> Job:
