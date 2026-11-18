@@ -1,6 +1,11 @@
 # Poker Bot Hackathon: Starter Kit
 
-<!-- TODO: hackathon name, dates, how and when to submit, prizes, contact. -->
+**IEEE uOttawa × LARUS** · Saturday, November 21 · 9 AM to 10 PM · STEM 117 · teams of 1-2
+
+You write a `decide()` function that picks a move from the game state; when
+coding ends, every bot plays in a live tournament. There's $750 in prizes, for
+the tournament winners and for the most creative strategies, so your bot
+doesn't have to win to be rewarded.
 
 Everything you need to build a No-Limit Texas Hold'em bot for the hackathon: the
 game engine, the table and blind logic, the bot sandbox, a validator, a bot
@@ -21,7 +26,8 @@ out much of the luck of the deal. Winning both matches wins the pairing, one
 each is a draw. The round robin is repeated as many times as the qualification
 window allows, and the four bots with the best records go through to the final.
 
-**Final.** <!-- TODO: format of the final. --> To be announced.
+**Final.** The top four play a heads-up knockout bracket, shown live: two
+semifinals, then the final.
 
 **Every match** starts at 10,000 chips each, with standard blinds that rise every
 20 hands:
@@ -47,6 +53,15 @@ current `blinds`.
 ## Getting started
 
 You need Python 3.10 (one of the libraries, eval7, doesn't build on 3.11+).
+Your computer probably has a newer Python; the quickest way to get 3.10 is
+[uv](https://docs.astral.sh/uv/):
+
+```bash
+uv python install 3.10
+uv venv --seed -p 3.10 .venv && source .venv/bin/activate     # do this in the kit folder
+```
+
+Then, with the environment active:
 
 ```bash
 make install                                   # eval7, numpy, scipy, treys, scikit-learn
@@ -61,7 +76,8 @@ blinds). Useful options:
 
 - `--seed 7` deals the same cards every time, so you can compare two versions of your bot fairly.
 - `--blinds turbo`, `--blinds 50/100` (flat), `--mode fixed --hands 500`, `--stack 20000`.
-- `--log match.jsonl` writes every event, including exactly what your bot saw at each decision.
+- `--log match.jsonl` writes every event, including what your bot saw at each decision
+  (everything except `match_action_log`, left out to keep the file small).
 - `--docker` runs the bots inside the tournament's sandbox (see below).
 
 The kit is intentionally small: it plays a match and tells you who won. Testing
@@ -69,6 +85,10 @@ harnesses, statistics and opponents to benchmark against are part of the
 challenge, and are yours to build.
 
 ### Testing in the sandbox
+
+No Docker? `make validate` still checks your imports against what's installed
+in the sandbox, which is the most common way a bot that works on a laptop fails
+in the tournament. If you can, though, run it in the sandbox as well.
 
 In the tournament every bot runs in its own Docker container with no network,
 a read-only filesystem, **768 MB of memory and half a CPU core**. Before you
@@ -93,8 +113,16 @@ it's your turn. It returns an action:
 {"action": "all_in"}
 ```
 
-Invalid or missing actions count as a fold. A raise below the minimum is
-raised to the minimum.
+How the engine reads your reply:
+
+- An unknown or missing action counts as a **fold**.
+- **`check` when you owe chips is played as a call**, and `call` when you owe
+  nothing is played as a check. Look at `amount_owed` (or `can_check`) before
+  checking, or your bot may call big bets without meaning to.
+- A raise below `min_raise_to` is raised to the minimum; a raise you can't
+  afford becomes all-in.
+- There's no separate "bet" action: the first bet on a street is a `raise`, and
+  appears as `raise` in the logs.
 
 `game_state` contains:
 
@@ -120,6 +148,10 @@ raised to the minimum.
 | `action_log` | `list` | Every action so far this hand, each `{"seat", "bot_id", "action", "amount"}`, including the `small_blind`, `big_blind` and `ante` posts |
 | `match_action_log` | `list` | The last 200 entries across the whole match (this hand included): the same entries as `action_log`, plus `hand_num` |
 | `time_limit_ms` | `int` | Your deadline for this decision |
+
+**Heads-up positions:** the button posts the small blind and acts first before
+the flop; after the flop the big blind acts first. `pot` includes every bet
+made so far, including the current street's.
 
 **Amounts in the logs:** for `raise` and `all_in`, `amount` is the bettor's total
 on that street. For `call` it is the chips added, for posts the chips posted, and
@@ -175,6 +207,23 @@ Breaking these rules gets a bot removed from the tournament.
 
 `make validate BOT=...` runs the same checks the organisers run on every
 submission.
+
+## Submitting your bot
+
+1. **Make your own repo.** On the kit's GitHub page, click **Use this template**,
+   then clone your new repo and work there. (Keep it private while you work if
+   you like.)
+2. **Keep your bot in `my_bots/<team_name>/`**: `bot.py`, plus `data/` if you
+   use one. Use lowercase letters, digits and underscores for the team name.
+   Only that folder is collected; changes anywhere else in your repo are ignored.
+3. **Check it:** `make validate BOT=my_bots/<team_name>`.
+4. **Push before the deadline**, make sure the repo is public (or that the
+   organisers have access), and submit its link in the form shown at the event.
+   Your repo is collected exactly at the deadline; anything pushed later doesn't count.
+
+Right after the deadline every bot is checked: the validator, a short match in
+the sandbox, and a review of the code against the rules. A bot that fails to
+load can't play, so validate before you push.
 
 ## What's in the kit
 

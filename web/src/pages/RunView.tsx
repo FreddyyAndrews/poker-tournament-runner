@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react'
 import { api } from '../api'
-import { BracketView, MttView, RoundRobinView, SeriesChart } from '../components/dashboards'
+import { BracketView, MttView, QualifierPanel, RoundRobinView, SeriesChart } from '../components/dashboards'
 import { ord } from '../components/PokerTable'
 import { StatusPill } from './Home'
 
 const fmt = (n: number) => (n ?? 0).toLocaleString('en-US')
 const FORMAT_NAME: Record<string, string> = {
-  table: 'Table', bracket: 'Bracket', round_robin: 'Round robin', mtt: 'Multi-table',
+  table: 'Table', bracket: 'Bracket', round_robin: 'Round robin', mtt: 'Multi-table', qualifier: 'Qualifier',
 }
 
 export function RunView({ runId }: { runId: string }) {
@@ -38,6 +38,7 @@ export function RunView({ runId }: { runId: string }) {
   const cfg = d.config ?? {}
   const live: string[] = active ? (run.job?.live ?? []).filter(() => format !== 'mtt') : []
   const isSeries = run.kind === 'series'
+  const rr = format === 'round_robin' || format === 'qualifier'
   const runsTotal = d.runs ?? run.job?.params?.runs
   const runsDone = p?.runs_done ?? run.job?.runs_done ?? 0
 
@@ -160,23 +161,28 @@ export function RunView({ runId }: { runId: string }) {
         </section>
       )}
 
+      {p?.kind === 'qualifier' && <section className="section"><QualifierPanel p={p} active={active} /></section>}
       {p?.kind === 'bracket' && <section className="section"><BracketView p={p} /></section>}
       {p?.kind === 'round_robin' && <section className="section"><h2>Head to head</h2><RoundRobinView p={p} /></section>}
       {p?.kind === 'mtt' && <section className="section"><MttView p={p} /></section>}
 
-      {!isSeries && (d.standings || p?.standings?.length > 0) && (
+      {!isSeries && (d.standings || p?.standings?.length > 0 || p?.provisional?.length > 0) && (
         <section className="section">
-          <h2>{d.standings ? 'Final standings' : 'Standings so far'}</h2>
+          <h2>{d.standings ? 'Final standings' : format === 'qualifier' && !p?.standings?.length
+            ? 'Provisional standings (first cycle still playing)'
+            : format === 'qualifier' ? `Standings after ${p.cycles_complete.length} complete cycle${p.cycles_complete.length === 1 ? '' : 's'}`
+            : 'Standings so far'}</h2>
           <table className="list num" data-testid="standings-table">
-            <thead><tr><th>#</th><th>Bot</th>{format === 'round_robin' && <th className="r">Points</th>}
-              {(format === 'bracket' || format === 'round_robin') && <th className="r">W-L</th>}
+            <thead><tr><th>#</th><th>Bot</th>{rr && <th className="r">Points</th>}
+              {(format === 'bracket' || rr) && <th className="r">{rr ? 'W-L-D' : 'W-L'}</th>}
               <th className="r">Chips won</th><th className="r">bb/100</th><th className="r">Hands</th>
               <th className="r">Timeouts</th><th className="r">Errors</th></tr></thead>
             <tbody>
-              {(d.standings ?? p.standings).map((s: any) => (
-                <tr key={s.bot}><td>{s.place}</td><td>{s.bot}</td>
-                  {format === 'round_robin' && <td className="r">{s.points}</td>}
-                  {(format === 'bracket' || format === 'round_robin') &&
+              {(d.standings ?? (p.standings?.length ? p.standings : p.provisional)).map((s: any) => (
+                <tr key={s.bot} className={s.qualified ? 'qualified' : ''}><td>{s.place}</td>
+                  <td>{s.bot}{s.qualified && <span className="qual-tag">{d.standings ? 'qualified' : 'in the top 4'}</span>}</td>
+                  {rr && <td className="r">{s.points}</td>}
+                  {(format === 'bracket' || rr) &&
                     <td className="r">{s.wins}-{s.losses}{s.draws ? `-${s.draws}` : ''}</td>}
                   <td className="r">{s.delta > 0 ? '+' : ''}{fmt(s.delta)}</td>
                   <td className="r">{(s.bb_per_100 ?? 0).toFixed(1)}</td><td className="r">{fmt(s.hands_played)}</td>

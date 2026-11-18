@@ -459,3 +459,10 @@ table.rr .live-dot { position: absolute; top: 5px; right: 5px; width: 6px; heigh
 .np-chips { display: flex; gap: 14px; flex-wrap: wrap; font-size: 13px; }
 .up { color: var(--good); }
 .down { color: var(--live); }
+
+/* Qualifier */
+.qual-stats { display: flex; gap: 40px; flex-wrap: wrap; align-items: flex-end; }
+.qual-big { font-size: 34px; font-weight: 600; line-height: 1.1; }
+tr.qualified td { background: color-mix(in srgb, var(--good) 10%, transparent); }
+.qual-tag { margin-left: 8px; font-size: 11px; padding: 1px 6px; border-radius: 8px;
+  color: var(--good); border: 1px solid color-mix(in srgb, var(--good) 50%, transparent); }

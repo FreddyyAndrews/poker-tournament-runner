@@ -98,9 +98,8 @@ def publish(dest: Path, record: bool = True):
     (dest / MANIFEST).write_text("\n".join(sorted(set(files) | {VERSION_FILE})) + "\n")
     if core_hash(dest / "pokercore") != h:
         raise SystemExit("the published pokercore/ doesn't match this repo's; nothing recorded")
-    if record:
-        PUBLISHED.write_text(json.dumps({"core_hash": h, "runner": version, "published": stamp},
-                                        indent=2) + "\n")
+    if record:      # only the fingerprint, so republishing an unchanged core changes nothing here
+        PUBLISHED.write_text(json.dumps({"core_hash": h}, indent=2) + "\n")
     print(f"Published the kit to {dest}: core {h}, {len(files)} files (runner {version}).")
     print("Review it, then commit and push the kit repo.")
 

@@ -59,11 +59,16 @@ FORBIDDEN_MODULES = {
     "http", "ftplib", "smtplib", "telnetlib", "xmlrpc",
     "subprocess", "multiprocessing",
     "pickle", "shelve",
-    "threading", "asyncio",
+    "threading", "_thread", "asyncio", "concurrent",
     "ctypes",                        # FFI, can call libc
     "runpy", "importlib",            # dynamic imports
     "dotenv",                        # secrets stay out of bots (pokercore/sandbox/guard.py)
 }
+
+# Third-party libraries installed in the sandbox image (pokercore/sandbox/
+# Dockerfile). Anything else that isn't in the standard library fails to import
+# there, even if it is installed wherever the validator runs.
+SANDBOX_LIBRARIES = {"eval7", "numpy", "scipy", "treys", "sklearn"}
 
 # Specific call patterns banned even if their module is allowed.
 # Matched as substrings against the source — intentionally aggressive.
@@ -245,6 +250,37 @@ VALID_ACTIONS = {"fold", "check", "call", "raise", "all_in"}
 # Static analysis
 # ---------------------------------------------------------------------------
 
+def _available_in_sandbox(name: str, bot_dir: str) -> bool:
+    """Importable in the sandbox: the standard library, the sandbox's libraries,
+    or a module shipped next to bot.py."""
+    return (name in sys.stdlib_module_names or name in SANDBOX_LIBRARIES or name == "__future__"
+            or os.path.isfile(os.path.join(bot_dir, name + ".py"))
+            or os.path.isfile(os.path.join(bot_dir, name, "__init__.py")))
+
+
+def _import_guarded_nodes(tree) -> set:
+    """ids of import statements inside a try whose handlers catch a failed import
+    (ImportError, ModuleNotFoundError, Exception, or a bare except)."""
+    catches = {"ImportError", "ModuleNotFoundError", "Exception", "BaseException"}
+    guarded = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Try):
+            continue
+        names = set()
+        for h in node.handlers:
+            if h.type is None:
+                names.add("Exception")
+            for t in (h.type.elts if isinstance(h.type, ast.Tuple) else [h.type] if h.type else []):
+                if isinstance(t, ast.Name):
+                    names.add(t.id)
+        if names & catches:
+            for stmt in node.body:
+                for sub_node in ast.walk(stmt):
+                    if isinstance(sub_node, (ast.Import, ast.ImportFrom)):
+                        guarded.add(id(sub_node))
+    return guarded
+
+
 def check_static(path: str) -> list:
     """
     Parse bot.py and flag forbidden imports and other issues.
@@ -259,8 +295,12 @@ def check_static(path: str) -> list:
         return [{"level": "error", "check": "syntax", "message": str(e)}]
 
     # Walk the AST for imports
+    bot_dir = os.path.dirname(os.path.abspath(path))
+    guarded = _import_guarded_nodes(tree)
     for node in ast.walk(tree):
         if isinstance(node, (ast.Import, ast.ImportFrom)):
+            if isinstance(node, ast.ImportFrom) and node.level:
+                continue                                   # relative import: the bot's own code
             if isinstance(node, ast.Import):
                 names = [alias.name.split(".")[0] for alias in node.names]
             else:
@@ -271,7 +311,19 @@ def check_static(path: str) -> list:
                         "level": "error",
                         "check": "forbidden_import",
                         "message": f"Forbidden import: '{name}' — bots may not use network, "
-                                   f"filesystem, or subprocess modules.",
+                                   f"filesystem, subprocess or concurrency modules.",
+                    })
+                elif not _available_in_sandbox(name, bot_dir):
+                    optional = id(node) in guarded
+                    warnings.append({
+                        "level": "warning" if optional else "error",
+                        "check": "unavailable_import",
+                        "message": (f"'{name}' isn't installed in the tournament sandbox"
+                                    + (" (this import is in a try/except, so the bot must work "
+                                       "without it)." if optional else
+                                       ", so the bot will fail to load there. Available: the "
+                                       "Python 3.10 standard library, " + ", ".join(sorted(SANDBOX_LIBRARIES))
+                                       + ".")),
                     })
 
     # Banned call/attribute patterns — catches __import__('os'), eval(...),
@@ -590,9 +642,11 @@ def _confine(bot_py):
     guard.install(os.path.dirname(os.path.abspath(bot_py)))
 
 
-def validate(bot_path):
+def validate(bot_path, static_only=False):
     """Full validation of a bot submission (.py file, directory, or .zip).
     Returns a result dict with passed/failed status and details.
+    static_only: package and source checks only, without importing the bot
+    (for code nobody has reviewed yet; run it in the sandbox to test it).
     """
     results = {
         "bot_path": str(bot_path),
@@ -618,7 +672,8 @@ def validate(bot_path):
             else:
                 results["warnings"].append(issue["message"])
 
-        if results["errors"]:
+        if results["errors"] or static_only:
+            results["passed"] = not results["errors"]
             return results
 
         if CONFINE:

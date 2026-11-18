@@ -1,7 +1,7 @@
 // Format-specific run dashboards: bracket tree, round-robin grid, multi-table
 // overview, series results. Each takes the server's `progress` object.
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ord } from './PokerTable'
 
 const fmt = (n: number) => (n ?? 0).toLocaleString('en-US')
@@ -214,6 +214,38 @@ export function SeriesChart({ rows, runs }: { rows: any[]; runs: number }) {
           </div>
         )
       })()}
+    </div>
+  )
+}
+
+const clock = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`
+
+export function QualifierPanel({ p, active }: { p: any; active: boolean }) {
+  const [now, setNow] = useState(Date.now())
+  useEffect(() => {
+    if (!active) return
+    const t = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(t)
+  }, [active])
+  const [seenAt] = useState(Date.now())
+  const budget = (p.time_budget_min ?? 0) * 60
+  const elapsed = p.elapsed_s != null ? p.elapsed_s + (now - seenAt) / 1000 : null
+  const times: number[] = p.cycle_seconds ?? []
+  const typical = times.length ? times.reduce((a, b) => a + b, 0) / times.length : null
+  const done = p.cycles_complete?.length ?? 0
+  return (
+    <div className="qualifier" data-testid="qualifier-panel">
+      <div className="qual-stats">
+        {active && elapsed != null && <div><div className="qual-big num">{clock(Math.max(0, budget - elapsed))}</div>
+          <div className="muted">left of {p.time_budget_min} min</div></div>}
+        <div><div className="qual-big num">{done}</div><div className="muted">complete cycle{done === 1 ? '' : 's'}</div></div>
+        {active && p.running_cycle && <div><div className="qual-big num">{p.running_cycle_done}/{p.matches_per_cycle}</div>
+          <div className="muted">matches in cycle {p.running_cycle}</div></div>}
+        {typical != null && <div><div className="qual-big num">{clock(typical)}</div><div className="muted">per cycle</div></div>}
+      </div>
+      <p className="hint">Every cycle is a full duplicate round robin ({p.matches_per_cycle} matches). A cycle that has
+        started always finishes, and a new one starts only if it can finish in the time left; only complete
+        cycles count. The top {p.qualifiers} go through.</p>
     </div>
   )
 }

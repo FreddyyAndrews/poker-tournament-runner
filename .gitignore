@@ -21,3 +21,6 @@ node_modules/
 *.egg-info/
 
 references/
+
+# Tournament submissions collected by `poker intake`
+entries/

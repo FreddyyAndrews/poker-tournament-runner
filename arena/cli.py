@@ -738,6 +738,46 @@ def cmd_serve(args):
     Server(uvicorn.Config(app, host="127.0.0.1", port=args.port, log_level="warning")).run()
 
 
+def cmd_intake(args):
+    from arena import intake
+    try:
+        subs = intake.read_submissions(args.file)
+    except (OSError, ValueError) as e:
+        _fail(str(e), args.json)
+    if args.local:
+        def progress(ev):
+            if not args.json:
+                print(f"  [{ev['done']}/{ev['total']}] {ev['team']}: {ev['status']}", flush=True)
+        try:
+            result = intake.run_intake(subs, use_docker=not args.no_docker, workers=args.workers,
+                                       progress=progress, only=args.only)
+        except ValueError as e:
+            _fail(str(e), args.json)
+    else:
+        import time as _time
+        server = _server(args)
+        server.post("/api/intake", {"submissions": Path(args.file).read_text(), "only": args.only,
+                                    "docker": not args.no_docker, "workers": args.workers})
+        seen = set()
+        while True:
+            state = server.get("/api/intake")
+            for team, status in (state.get("progress") or {}).get("teams", {}).items():
+                if team not in seen and not args.json:
+                    seen.add(team)
+                    print(f"  [{len(seen)}/{len(subs)}] {team}: {status}", flush=True)
+            if not state["running"]:
+                break
+            _time.sleep(1)
+        if state.get("error"):
+            _fail("intake failed: " + state["error"], args.json)
+        result = state["result"]
+    if args.json:
+        _print_json(result)
+    else:
+        print()
+        print(intake.table(result))
+
+
 def cmd_bots(args):
     found = botlib.available()
     if args.json:
@@ -915,6 +955,18 @@ def build_parser():
     px.add_argument("--url", help="with --status: the proxy's URL (default http://127.0.0.1:PORT)")
     px.add_argument("--json", action="store_true")
     px.set_defaults(func=cmd_proxy)
+
+    it = sub.add_parser("intake", help="collect the teams' bots from their submission links into entries/",
+                        description=__import__("arena.intake", fromlist=["x"]).__doc__,
+                        formatter_class=argparse.RawDescriptionHelpFormatter)
+    it.add_argument("file", help='submissions file: one "team source" per line')
+    it.add_argument("--local", action="store_true", help="run in this process instead of on the server")
+    it.add_argument("--no-docker", action="store_true", help="smoke matches without the Docker sandbox")
+    it.add_argument("--workers", type=int, default=4, help="teams processed at once (default 4)")
+    it.add_argument("--only", nargs="+", metavar="TEAM",
+                    help="re-collect just these teams; everyone else keeps their entry from the last intake")
+    it.add_argument("--json", action="store_true")
+    it.set_defaults(func=cmd_intake)
 
     b = sub.add_parser("bots", help="list available bots")
     b.add_argument("--json", action="store_true")

@@ -70,6 +70,13 @@ class ClaimRequest(BaseModel):
     seat: str                              # seat name, e.g. "llm2"
 
 
+class IntakeRequest(BaseModel):
+    submissions: str               # "team source" lines, as in a submissions file
+    docker: bool = True
+    workers: int = 4
+    only: Optional[List[str]] = None
+
+
 class RunRequest(BaseModel):
     format: str
     bots: List[str]
@@ -84,6 +91,8 @@ class RunRequest(BaseModel):
     table_size: Optional[int] = None
     duplicate: Optional[bool] = None
     seeding: Optional[str] = None
+    time_budget_min: Optional[float] = None
+    max_cycles: Optional[int] = None
     runs: int = 1
     workers: Union[int, str] = 1           # matches (or series runs) at once; 0 or "max": as many as possible
     docker: bool = False
@@ -154,6 +163,52 @@ def create_app(runs_dir: Path = DEFAULT_RUNS_DIR, port: int = 8765) -> FastAPI:
     def health():
         return {"ok": True, "version": arena.__version__, "runs_dir": str(runs_dir),
                 "cpus": os.cpu_count()}
+
+    # -- intake: collect the teams' bots into entries/ ---------------------------
+
+    intake_state = {"running": False, "progress": None, "error": None}
+
+    @app.post("/api/intake", status_code=202)
+    def start_intake(req: IntakeRequest):
+        from arena import intake
+        if intake_state["running"]:
+            raise HTTPException(409, "an intake is already running")
+        try:
+            subs = intake.read_submissions_text(req.submissions)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        if not subs:
+            raise HTTPException(400, "no submissions")
+        if req.only:
+            unknown = set(req.only) - {s.team for s in subs}
+            if unknown:
+                raise HTTPException(400, f"not in the submissions: {', '.join(sorted(unknown))}")
+            if intake.latest() is None:
+                raise HTTPException(400, "only needs an earlier intake to keep the other teams from")
+        intake_state.update(running=True, error=None,
+                            progress={"done": 0, "total": len(req.only or subs), "teams": {}})
+
+        def progress(ev):
+            intake_state["progress"]["done"] = ev["done"]
+            intake_state["progress"]["teams"][ev["team"]] = ev["status"]
+
+        def work():
+            try:
+                intake.run_intake(subs, use_docker=req.docker, workers=req.workers, progress=progress,
+                                  only=req.only)
+            except Exception as e:      # reported by GET /api/intake
+                intake_state["error"] = f"{type(e).__name__}: {e}"
+            finally:
+                intake_state["running"] = False
+
+        import threading
+        threading.Thread(target=work, daemon=True, name="intake").start()
+        return {"started": True, "teams": len(subs)}
+
+    @app.get("/api/intake")
+    def get_intake():
+        from arena import intake
+        return {**intake_state, "result": intake.latest()}
 
     @app.get("/api/bots")
     def list_bots():

@@ -32,7 +32,7 @@ from arena.pacing import Cancelled
 from pokercore.seeds import derive_seed, new_seed
 from arena.table import MODES, MatchConfig, run_match
 
-FORMATS = ("table", "bracket", "round_robin", "mtt")
+FORMATS = ("table", "bracket", "round_robin", "mtt", "qualifier")
 RUN_FILE = "run.json"
 
 
@@ -50,6 +50,8 @@ class RunConfig:
     table_size: int = 6                # mtt
     duplicate: bool = None             # round_robin / heads-up table: replay deals with seats swapped
     seeding: str = "random"            # bracket: random | given (list order = seed order)
+    time_budget_min: float = None      # qualifier: start no cycle that won't finish in this time
+    max_cycles: int = None             # qualifier: stop after this many cycles
     name: str = None
 
     def __post_init__(self):
@@ -123,6 +125,8 @@ def _module(fmt):
         from arena.formats import round_robin as m
     elif fmt == "mtt":
         from arena.formats import mtt as m
+    elif fmt == "qualifier":
+        from arena.formats import qualifier as m
     else:
         raise ValueError(f"unknown format {fmt!r}")
     return m

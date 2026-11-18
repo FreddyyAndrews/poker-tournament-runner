@@ -13,8 +13,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+# entries/: tournament submissions accepted by `poker intake` (arena/intake.py)
 # champions/: frozen copies of the strongest bots (arena/champions.py)
-SEARCH_DIRS = [REPO_ROOT / "my_bots", REPO_ROOT / "bots", REPO_ROOT / "champions"]
+SEARCH_DIRS = [REPO_ROOT / "entries", REPO_ROOT / "my_bots", REPO_ROOT / "bots", REPO_ROOT / "champions"]
 
 _worktree_cache = {"at": 0.0, "dirs": []}
 

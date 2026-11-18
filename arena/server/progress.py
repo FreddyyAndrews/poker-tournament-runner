@@ -100,6 +100,8 @@ def run_progress(run_dir: Path, run: dict, run_id: str, active: bool = False):
         return round_robin_progress(run_dir, cfg, run_id, active)
     if fmt == "mtt":
         return mtt_progress(run_dir, run_id, active)
+    if fmt == "qualifier":
+        return qualifier_progress(run_dir, cfg, run_id, active)
     return None
 
 
@@ -272,3 +274,49 @@ def series_progress(series_dir: Path, series: dict) -> dict:
     return {"kind": "series", "runs_done": len(done), "runs": series.get("runs"),
             "aggregate": aggregate(done) if done else [],
             "winners": [{"run_id": r["run_id"], "winner": r["standings"][0]["bot"]} for r in done]}
+
+
+# ---------------------------------------------------------------------------
+
+def qualifier_progress(run_dir: Path, cfg, run_id: str, active: bool = False) -> dict:
+    """Cycles so far, the time left, a leaderboard over complete cycles (and a
+    provisional one including the cycle being played), and what's playing."""
+    import time as _time
+    from arena.formats import qualifier
+    names = [s.name for s in botlib.resolve_all(cfg.bots, names=cfg.names)]
+    order = {n: i for i, n in enumerate(names)}
+    info_file = run_dir / qualifier.PROGRESS_FILE
+    info = json.loads(info_file.read_text()) if info_file.is_file() else {}
+    per_cycle = len(names) * (len(names) - 1)
+    records, playing, counts = [], [], {}
+    mdir_root = run_dir / "matches"
+    for mdir in sorted(mdir_root.iterdir()) if mdir_root.is_dir() else []:
+        if not mdir.name.startswith("c") or "_vs_" not in mdir.name:
+            continue
+        cycle = int(mdir.name[1:3])
+        status = _status(mdir, active)
+        summary = _summary(mdir)
+        players = summary and [r["bot"] for r in summary.get("results") or []]
+        if summary and players:
+            rec = _record(summary, cycle=cycle, leg=int(mdir.name.rsplit("leg", 1)[1]),
+                          players=sorted(players, key=lambda n: order.get(n, 99)))
+            if rec:
+                records.append(rec)
+                counts[cycle] = counts.get(cycle, 0) + 1
+        elif status == "running":
+            live = live_chips(mdir)
+            playing.append({"key": f"{run_id}/matches/{mdir.name}", "match_id": mdir.name, "cycle": cycle,
+                            "live": live})
+    complete_cycles = sorted(c for c, n in counts.items() if n >= per_cycle)
+    final = [r for r in records if r["cycle"] in complete_cycles]
+    started = info.get("started_at")
+    budget = info.get("time_budget_min")
+    elapsed = (_time.time() - started) if started and active else None
+    return {"kind": "qualifier", "bots": names, "matches_per_cycle": per_cycle,
+            "cycles_complete": complete_cycles, "running_cycle": info.get("running_cycle") if active else None,
+            "running_cycle_done": counts.get(info.get("running_cycle"), 0) if active else None,
+            "cycle_seconds": info.get("cycle_seconds", []), "time_budget_min": budget,
+            "elapsed_s": round(elapsed) if elapsed is not None else None,
+            "standings": qualifier.standings(cfg, final) if final else [],
+            "provisional": qualifier.standings(cfg, records) if records else [],
+            "qualifiers": qualifier.QUALIFIERS, "playing": playing}

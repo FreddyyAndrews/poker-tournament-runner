@@ -8,7 +8,7 @@ const folderLabel = (f: string) => f.startsWith('worktree:') ? f.slice(9) : f + 
 const folderTitle = (f: string) => f.startsWith('worktree:') ? `my_bots/ in the git worktree on branch ${f.slice(9)}` : f + '/'
 
 
-type Format = 'table' | 'bracket' | 'round_robin' | 'mtt'
+type Format = 'table' | 'bracket' | 'round_robin' | 'mtt' | 'qualifier'
 type Mode = 'fixed' | 'cash' | 'freezeout'
 type BotInfo = { name: string; folder: string; path: string; hash: string }
 
@@ -17,6 +17,7 @@ const FORMATS: { id: Format; title: string; blurb: string }[] = [
   { id: 'bracket', title: 'Bracket', blurb: 'Heads-up knockout. Byes go to the top seeds.' },
   { id: 'round_robin', title: 'Round robin', blurb: 'Every pair plays heads-up.' },
   { id: 'mtt', title: 'Multi-table', blurb: 'Freezeout across tables, down to a final table.' },
+  { id: 'qualifier', title: 'Qualifier', blurb: 'Duplicate round robins, again and again until the time is up. Top 4 go through.' },
 ]
 
 const MODES: { id: Mode; title: string; blurb: string }[] = [
@@ -61,6 +62,7 @@ export function Launch() {
   const [preset, setPreset] = useState('standard')
   const [flat, setFlat] = useState({ sb: 50, bb: 100, ante: 0 })
   const [tableSize, setTableSize] = useState(6)
+  const [budget, setBudget] = useState(60)          // qualifier: minutes
   const [duplicate, setDuplicate] = useState(true)
   const [seeding, setSeeding] = useState<'random' | 'given'>('random')
   const [runs, setRuns] = useState(1)
@@ -144,6 +146,7 @@ export function Launch() {
     const what = format === 'table' ? (n === 2 ? 'Heads-up match' : `${n || 'N'}-player table`)
       : format === 'bracket' ? `${n || 'N'}-bot knockout bracket`
       : format === 'round_robin' ? `${n || 'N'}-bot round robin`
+      : format === 'qualifier' ? `${n || 'N'}-bot qualifier: duplicate round robins for up to ${budget} minutes`
       : `${n || 'N'}-bot multi-table tournament (${tableSize} per table)`
     const how = mode === 'freezeout' ? `freezeout at ${blindKind === 'preset' ? preset : blinds} blinds`
       : `${fmt(hands)} ${mode === 'cash' ? 'cash ' : ''}hands at ${blinds}`
@@ -218,6 +221,7 @@ export function Launch() {
           table_size: format === 'mtt' ? tableSize : undefined,
           duplicate: format === 'round_robin' || format === 'table' ? duplicate : undefined,
           seeding: format === 'bracket' ? seeding : undefined,
+          time_budget_min: format === 'qualifier' ? budget : undefined,
         })
         location.hash = `#/run/${r.run_id}`
       }
@@ -335,6 +339,9 @@ export function Launch() {
                 <input type="number" min={1} value={hands} onChange={e => setHands(Number(e.target.value))} data-testid="hands" /></label>
               <label>Starting stack
                 <input type="number" min={1} step={500} value={stack} onChange={e => setStack(Number(e.target.value))} data-testid="stack" /></label>
+              {format === 'qualifier' && <label>Time budget (minutes)
+                <input type="number" min={1} value={budget} onChange={e => setBudget(Number(e.target.value))}
+                       data-testid="time-budget" /></label>}
               {format === 'mtt' && <label>Players per table
                 <input type="number" min={2} max={9} value={tableSize} onChange={e => setTableSize(Number(e.target.value))} /></label>}
             </div>
