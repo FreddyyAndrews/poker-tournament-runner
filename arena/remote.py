@@ -20,7 +20,7 @@ import threading
 import time
 
 from arena.pacing import Cancelled
-from arena.seats import DEFAULT_TIME_LIMIT_MS, Seat
+from pokercore.seats import DEFAULT_TIME_LIMIT_MS, Seat
 
 
 class RemoteSeat(Seat):

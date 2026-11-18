@@ -16,7 +16,7 @@ from pathlib import Path
 
 from arena import formats
 from arena.events import DEFAULT_RUNS_DIR
-from arena.seeds import derive_seed, new_seed
+from pokercore.seeds import derive_seed, new_seed
 from arena.stats import mean_ci, wilson
 
 SERIES_FILE = "series.json"

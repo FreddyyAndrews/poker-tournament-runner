@@ -12,7 +12,7 @@ import random
 from arena import bots as botlib
 from arena.formats import match_record, two_player_winner
 from arena.formats.table_fmt import combine
-from arena.seeds import derive_seed
+from pokercore.seeds import derive_seed
 
 DEFAULTS = {"mode": "freezeout", "hands": 2000, "blinds": "standard", "duplicate": False}
 

@@ -5,7 +5,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from engine.game import PokerEngine, STARTING_STACK, BIG_BLIND, SMALL_BLIND
+from pokercore.engine import PokerEngine, STARTING_STACK, BIG_BLIND, SMALL_BLIND
 
 
 def make_engine(stacks, dealer_seat=0, **kwargs):
@@ -286,7 +286,7 @@ def test_random_hands_never_ask_pointless_decisions():
 def test_validator_states_have_every_field_bots_get():
     """The validator's sample states must contain every key a real decision has,
     or bots that use documented fields fail validation."""
-    from sandbox.validator import TEST_STATES
+    from pokercore.validator import TEST_STATES
     eng = PokerEngine("h", ["a", "b"])
     real = set(eng.start_hand()) | {"match_action_log", "time_limit_ms"}
     for t in TEST_STATES:

@@ -22,7 +22,7 @@ from collections import defaultdict, deque
 from pathlib import Path
 
 from arena.events import DEFAULT_RUNS_DIR, find_run, has_events, read_events
-from arena.seats import Seat
+from pokercore.seats import Seat
 from arena.table import RUNTIME_STATS, MatchConfig, engine_hash, play_match
 
 # Decision fields that come from the live bot process, not the game.
@@ -203,7 +203,7 @@ def verify_events(events) -> dict:
         report["ok"] = not report["problems"]
         return report
     if events[0].get("engine_hash") != engine_hash():
-        report["warnings"].append("engine/game.py has changed since this match was played; "
+        report["warnings"].append("pokercore/engine.py has changed since this match was played; "
                                   "a replay mismatch may come from that change")
 
     report["problems"].extend(_check_accounting(events))

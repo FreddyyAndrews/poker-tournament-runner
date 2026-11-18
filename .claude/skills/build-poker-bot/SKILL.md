@@ -40,10 +40,10 @@ Read `bots/template/bot.py` for the full `game_state` schema, and `bots/shark`, 
 - Optional `"debug": {...}` in the reply (a small JSON dict) and anything you `print()` are saved with each decision and shown in the UI's Decision tab and by `analyze_match.py`.
 - The bot is loaded once per match and keeps module state across hands, so it can track opponents in globals keyed by `bot_id`.
 - **2 seconds per decision** (a timeout or crash folds). Libraries: the standard library, `eval7`, `numpy`, `scipy`, `treys` and `scikit-learn`.
-- No network, no file writes, no subprocesses. Locally `sandbox/guard.py` enforces this too: a bot can open only files in its own folder, gets no secrets from the environment, and can connect only to this machine.
+- No network, no file writes, no subprocesses. Locally `pokercore/sandbox/guard.py` enforces this too: a bot can open only files in its own folder, gets no secrets from the environment, and can connect only to this machine.
 - An optional read-only `data/` next to `bot.py` (tables, trained weights, up to 20 MB a file) loads at import time. It is part of the bot: commit it. Train anything offline, with scripts in your own folder.
 - **A bot that asks Jev** (TypeSafe's decision model) calls the proxy at `http://127.0.0.1:8766/jev/v1/systemone` with an `X-Poker-Bot: <name>` header and no key; see `my_bots/jev_bot`. Jev costs money and the proxy doesn't cap it: it paces requests across every bot, so under load your decisions wait and can time out (give a jev bot more time in a match with `--time-limit-ms`). `$POKER proxy --status` shows the rate and the spend. Keep requests compact, don't run more Jev matches than a question needs, and throw away results from matches where it fell back to check/fold.
-- Validate after edits: `$PY sandbox/validator.py my_bots/<name>/bot.py` must PASS (a bot that needs the network fails only on its HTTP import).
+- Validate after edits: `$PY pokercore/validator.py my_bots/<name>/bot.py` must PASS (a bot that needs the network fails only on its HTTP import).
 
 ## Tools
 

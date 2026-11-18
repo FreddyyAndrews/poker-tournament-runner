@@ -12,8 +12,9 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-import sandbox.match as match
-from sandbox.match import BotProcess, run_match
+import pokercore.botproc as botproc
+from pokercore.botproc import BotProcess
+from sandbox.match import run_match
 
 
 STATE = {
@@ -27,7 +28,7 @@ STATE = {
 
 @pytest.fixture(autouse=True)
 def fast_host(monkeypatch):
-    monkeypatch.setattr(match, "HOST_GRACE_S", 1.0)
+    monkeypatch.setattr(botproc, "HOST_GRACE_S", 1.0)
 
 
 @pytest.fixture
@@ -191,7 +192,7 @@ def test_slow_decision_times_out_then_recovers(make_bot):
 
 
 def test_frozen_process_is_restarted(make_bot):
-    # Bots can't keep files or read test settings (sandbox/guard.py), so the
+    # Bots can't keep files or read test settings (pokercore/sandbox/guard.py), so the
     # bot freezes on hand 0 only, and the restarted process plays hand 1.
     bot = make_bot("""
         import os, signal
@@ -326,7 +327,7 @@ def test_validator_json_survives_a_printing_bot(tmp_path):
     bot = tmp_path / "chatty.py"
     bot.write_text("print('loading')\ndef decide(state):\n    print('thinking', state['hand_num'])\n"
                    "    return {'action': 'check' if state['can_check'] else 'call'}\n")
-    out = subprocess.run([sys.executable, os.path.join(os.path.dirname(__file__), "..", "sandbox", "validator.py"),
+    out = subprocess.run([sys.executable, os.path.join(os.path.dirname(__file__), "..", "pokercore", "validator.py"),
                           str(bot), "--json"], capture_output=True, text=True, timeout=60)
     report = json.loads(out.stdout)
     assert report["passed"] and out.returncode == 0

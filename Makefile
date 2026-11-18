@@ -1,4 +1,4 @@
-.PHONY: install demo test validate clean web web-test proxy hooks lint
+.PHONY: install demo test validate clean web web-test proxy hooks lint publish-kit check-kit
 
 install:
 	@echo ">> Installing Cython<3 (eval7 build dep)"
@@ -30,7 +30,7 @@ test:
 
 validate:
 	@if [ -z "$(BOT)" ]; then echo "usage: make validate BOT=bots/mybot/bot.py"; exit 1; fi
-	python3 sandbox/validator.py $(BOT)
+	python3 pokercore/validator.py $(BOT)
 
 clean:
 	find . -type d -name __pycache__ -exec rm -rf {} +
@@ -42,3 +42,11 @@ web:
 
 web-test: web
 	cd web && npx playwright install chromium && npx playwright test
+
+publish-kit:
+	@if [ -z "$(KIT)" ]; then echo "usage: make publish-kit KIT=../poker-hackathon-kit"; exit 1; fi
+	python3 scripts/publish_kit.py $(KIT)
+
+check-kit:
+	@if [ -z "$(KIT)" ]; then echo "usage: make check-kit KIT=../poker-hackathon-kit"; exit 1; fi
+	python3 scripts/publish_kit.py --check $(KIT)

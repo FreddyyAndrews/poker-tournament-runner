@@ -1,5 +1,5 @@
 """
-Fullhouse Bot Validator
+Bot Validator
 =======================
 Automatically checks a bot.py before it enters the tournament.
 
@@ -13,8 +13,8 @@ Checks performed:
   7. Never raises an unhandled exception
 
 Usage:
-  python3 sandbox/validator.py bots/mybot/bot.py
-  python3 sandbox/validator.py bots/mybot/bot.py --json
+  python3 pokercore/validator.py bots/mybot/bot.py
+  python3 pokercore/validator.py bots/mybot/bot.py --json
 """
 
 import ast
@@ -62,7 +62,7 @@ FORBIDDEN_MODULES = {
     "threading", "asyncio",
     "ctypes",                        # FFI, can call libc
     "runpy", "importlib",            # dynamic imports
-    "dotenv",                        # secrets stay out of bots (sandbox/guard.py)
+    "dotenv",                        # secrets stay out of bots (pokercore/sandbox/guard.py)
 }
 
 # Specific call patterns banned even if their module is allowed.
@@ -339,7 +339,7 @@ def check_static(path: str) -> list:
 
     # Secrets stay out of bots: no path to a .env file, and no reading of
     # environment variables whose names look like credentials. (At run time
-    # sandbox/guard.py also keeps them out of reach.)
+    # pokercore/sandbox/guard.py also keeps them out of reach.)
     SECRETS_FILE = re.compile(r"(^|[/\\])\.env(\.[\w.-]+)?$")
     SECRET_NAME = re.compile(r"KEY|TOKEN|SECRET|PASS|CREDENTIAL|AUTH|COOKIE|SESSION", re.IGNORECASE)
 
@@ -352,8 +352,7 @@ def check_static(path: str) -> list:
             warnings.append({
                 "level": "error",
                 "check": "secrets",
-                "message": f"Forbidden: {s!r} names a secrets file. Bots never read .env; "
-                           "anything a bot needs from outside goes through the outside-bot proxy.",
+                "message": f"Forbidden: {s!r} names a secrets file. Bots never read .env files.",
             })
         name = None
         if isinstance(node, ast.Subscript) and _attr_chain(node.value) == "os.environ":
@@ -366,7 +365,7 @@ def check_static(path: str) -> list:
                 "level": "error",
                 "check": "secrets",
                 "message": f"Forbidden: reading the environment variable {name!r}. Bots get no "
-                           "credentials; anything that needs one goes through the outside-bot proxy.",
+                           "credentials.",
             })
 
     # Check decide() exists
@@ -575,14 +574,15 @@ def _resolve_submission(bot_path):
 
 # Set by the CLI: the bot is imported and called in this process, so before
 # that the process drops secret-looking environment variables and confines
-# itself to the bot's folder (sandbox/guard.py), as a match's bot process does.
+# itself to the bot's folder (pokercore/sandbox/guard.py), as a match's bot process does.
 CONFINE = False
 
 
 def _confine(bot_py):
     try:
-        from sandbox import guard
-    except ImportError:
+        from pokercore.sandbox import guard
+    except ImportError:          # run as a script, without the package installed
+        sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "sandbox"))
         import guard
     clean = guard.safe_env(os.environ)
     os.environ.clear()
@@ -655,7 +655,7 @@ def validate(bot_path):
 
 def main():
     import argparse
-    parser = argparse.ArgumentParser(description="Validate a Fullhouse bot submission")
+    parser = argparse.ArgumentParser(description="Validate a bot submission")
     parser.add_argument("bot_path", help="Path to bot.py, bot directory, or bot.zip")
     parser.add_argument("--json", action="store_true", help="Output as JSON")
     args = parser.parse_args()

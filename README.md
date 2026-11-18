@@ -241,7 +241,7 @@ Human and LLM seats play single tables (not tournaments). Their decisions are lo
 
 ### Docker sandbox
 
-**Without Docker,** the default, each bot runs as a local Python process confined by `sandbox/guard.py`:
+**Without Docker,** the default, each bot runs as a local Python process confined by `pokercore/sandbox/guard.py`:
 
 - **A short environment.** It gets only an allowlist (`PATH`, `HOME`, locale, `BOT_*`, `JEV_*`, `POKER_PROXY_URL`), and never a variable whose name looks like a secret, such as `*KEY*`, `*TOKEN*` or `*PASSWORD*`.
 - **Its own folder only.** An audit hook, installed before the bot is imported, refuses opening or listing files outside the bot's folder and the Python installation, writing files, starting processes, and network connections to anything but this machine. The jev bots reach the proxy on `127.0.0.1`.
@@ -249,7 +249,7 @@ Human and LLM seats play single tables (not tournaments). Their decisions are lo
 
 This stops careless code, such as a bot loading the repo's `.env`, and casual attempts, but not a determined attacker. For untrusted code, use Docker.
 
-To run bots in the Docker sandbox (`--docker` on `match`, `run` and `bench`; the competition setup), build the image first, and rebuild it whenever `sandbox/runner.py` changes:
+To run bots in the Docker sandbox (`--docker` on `match`, `run` and `bench`; the competition setup), build the image first, and rebuild it whenever `pokercore/sandbox/runner.py` changes:
 
 ```bash
 ./sandbox.sh build
@@ -381,6 +381,21 @@ def decide(state):
 
 ---
 
+## The hackathon starter kit
+
+Entrants get a separate repo generated from this one: `pokercore/` unchanged,
+plus the files in `kit/`. Never edit the kit by hand; change `pokercore/` or
+`kit/` here and republish:
+
+```bash
+make publish-kit KIT=../poker-hackathon-kit   # then commit and push the kit repo
+make check-kit KIT=../poker-hackathon-kit     # does a kit carry this runner's core?
+```
+
+`make test` fails while `pokercore/` differs from the last published kit, and
+every match records the core's fingerprint (`core_hash` in `match_start`), so
+what entrants tested against and what the tournament ran can always be compared.
+
 ## Repo structure
 
 ```
@@ -388,8 +403,10 @@ arena/          Match runner: seats, tables, blind structures, formats, series, 
 arena/server/   HTTP API, background jobs, live event streams, MCP endpoint (`poker serve`)
 configs/        Example run configs for every format
 web/            React + TypeScript UI (built into web/dist, served by `poker serve`); Playwright tests in web/e2e
-engine/         Game engine: NLHE rules, hand evaluation, chip tracking
-sandbox/        Bot runner, Docker sandbox, validator, legacy match runner
+pokercore/      Everything a bot experiences: engine, table, blinds, seats, bot processes, sandbox, validator.
+                Published unchanged as the hackathon starter kit; imports nothing from the rest of the repo
+kit/            The kit's own files (README, play.py, template); scripts/publish_kit.py builds the kit
+sandbox/        Legacy match runner from Full House Engine (sandbox/match.py)
 bots/           Reference bots and starter template
 my_bots/        Your bots (found by name, as are other worktrees' my_bots/)
 tests/          Engine, runner and arena tests

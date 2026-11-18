@@ -22,7 +22,7 @@ Preconditions: a finished match with the bot (e.g. `vs_bots`) and `bench_before.
 - Analyse: `.venv/bin/python $S/analyze.py $RUN vs_bots verify_bot` prints and saves `analysis_verify_bot_vs_bots.md`. It has "Result:", decisions per street, and "Biggest losing hands" with `debug={...}` and `logs:` lines from the bot. For the seed bot, the per-street lines show the real leak: flop, turn and river are 100% `check`, because its `strength` only scores the hole cards. The losing hands show preflop calls marked `why: cheap enough`.
 - Export: `.venv/bin/poker export data/verify/$RUN/runs/vs_bots --bot verify_bot -o data/verify/$RUN/export_verify_bot.zip` writes a zip. In its `events.jsonl`, `verify_bot` decisions keep `state` and `logs`, and other bots' decisions have neither.
 - Change and compare: edit `my_bots/verify_bot/bot.py` to fix what the report shows. For the seed bot, score made hands postflop with `eval7` (`eval7.handtype(eval7.evaluate(cards))`), bet strong hands, fold weak hands facing bets, and fold weak hands to preflop raises. Then:
-  - `$R/sandbox/validator.py` passes;
+  - `$R/pokercore/validator.py` passes;
   - re-run the same match command with `--id vs_bots_v2`;
   - re-run `poker bench verify_bot --hands 300 --workers 4 --json > data/verify/$RUN/bench_after.json`.
   The after bench's `hash` differs from before and `previous` contains the before entry. Report both `overall_bb_per_100` values; `analyze.py` on `vs_bots_v2` should show postflop `raise` counts above zero. An improvement is a claim backed by these numbers, not by the edit.

@@ -6,8 +6,9 @@ Locally a bot is an ordinary Python process, so without this it could read
 any file the user can (the repo's secrets, other bots' code) or the
 environment's API keys, and print them into match logs. Two parts:
 
-  safe_env(environ)   the environment a bot process gets: a short allowlist,
-                      and never a name that looks like a secret.
+  safe_env(environ)   the environment a bot process gets: a short allowlist
+                      (which a host can extend with BOT_ENV_ALLOW), and never
+                      a name that looks like a secret.
   install(bot_dir)    an audit hook (PEP 578), installed before the bot is
                       imported and impossible to remove afterwards, that
                       refuses:
@@ -15,8 +16,7 @@ environment's API keys, and print them into match logs. Two parts:
                           folder and the Python installation;
                         - writing files anywhere but __pycache__ folders;
                         - starting processes;
-                        - network connections to anything but this machine
-                          (jev bots reach the outside-bot proxy on 127.0.0.1).
+                        - network connections to anything but this machine.
 
 It stops careless code and casual attempts, not a determined attacker:
 audit hooks can be bypassed from native code, which is why the validator
@@ -29,8 +29,8 @@ import site
 import sys
 import sysconfig
 
-SAFE_NAMES = {"PATH", "HOME", "LANG", "LC_ALL", "LC_CTYPE", "TZ", "TMPDIR", "POKER_PROXY_URL"}
-SAFE_PREFIXES = ("BOT_", "JEV_", "PYTHON")
+SAFE_NAMES = {"PATH", "HOME", "LANG", "LC_ALL", "LC_CTYPE", "TZ", "TMPDIR"}
+SAFE_PREFIXES = ("BOT_", "PYTHON")
 SECRETISH = re.compile(r"KEY|TOKEN|SECRET|PASS|CREDENTIAL|AUTH|COOKIE|SESSION", re.IGNORECASE)
 LOOPBACK = {"127.0.0.1", "localhost", "::1", "0:0:0:0:0:0:0:1"}
 PROCESS_EVENTS = {"subprocess.Popen", "os.system", "os.exec", "os.posix_spawn", "os.spawn",
@@ -38,10 +38,25 @@ PROCESS_EVENTS = {"subprocess.Popen", "os.system", "os.exec", "os.posix_spawn", 
 WRITE_FLAGS = os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_APPEND | os.O_TRUNC
 
 
+def _allowed(environ) -> tuple:
+    """SAFE_NAMES and SAFE_PREFIXES, plus what the host adds in BOT_ENV_ALLOW:
+    comma-separated names, or prefixes ending in * (e.g. "MY_SETTING,MY_*")."""
+    names, prefixes = set(SAFE_NAMES), list(SAFE_PREFIXES)
+    for item in environ.get("BOT_ENV_ALLOW", "").split(","):
+        item = item.strip()
+        if item.endswith("*") and len(item) > 1:
+            prefixes.append(item[:-1])
+        elif item:
+            names.add(item)
+    return names, tuple(prefixes)
+
+
 def safe_env(environ) -> dict:
-    """The variables a bot process may see."""
+    """The variables a bot process may see. Secret-looking names never pass,
+    even when allowed."""
+    names, prefixes = _allowed(environ)
     return {k: v for k, v in environ.items()
-            if (k in SAFE_NAMES or k.startswith(SAFE_PREFIXES)) and not SECRETISH.search(k)}
+            if (k in names or k.startswith(prefixes)) and not SECRETISH.search(k)}
 
 
 def python_roots() -> list:

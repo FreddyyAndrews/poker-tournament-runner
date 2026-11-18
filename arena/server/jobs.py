@@ -102,7 +102,7 @@ class JobManager:
         if not 2 <= len(specs) <= 9:
             raise ValueError(f"A table needs 2-9 players, got {len(specs)}")
         mode = p.get("mode") or "fixed"
-        from arena import structures
+        from pokercore import structures
         blinds = p.get("blinds") or ("standard" if mode == "freezeout" else "50/100")
         stack = p.get("starting_stack") or 10_000
         hands = p.get("hands") or (2000 if mode == "freezeout" else 100)

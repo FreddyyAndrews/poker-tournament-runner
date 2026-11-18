@@ -5,7 +5,7 @@ to know whether it is talking to a sandboxed bot, a human in the browser, or
 an LLM over MCP (the last two arrive with remote seats).
 """
 
-from sandbox.match import BotProcess
+from pokercore.botproc import BotProcess
 
 DEFAULT_TIME_LIMIT_MS = {"bot": 2000, "human": 30000, "mcp": 120000}
 

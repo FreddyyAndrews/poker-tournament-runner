@@ -18,7 +18,7 @@ dev = ["pytest", "httpx", "pre-commit>=4", "ruff>=0.17"]
 poker = "arena.cli:main"
 
 [tool.setuptools]
-packages = ["arena", "arena.formats", "arena.server", "engine", "sandbox"]
+packages = ["arena", "arena.formats", "arena.server", "engine", "pokercore", "sandbox"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

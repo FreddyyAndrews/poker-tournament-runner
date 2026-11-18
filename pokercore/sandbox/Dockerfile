@@ -1,4 +1,4 @@
-# Fullhouse Hackathon — Bot Sandbox Container
+# Bot Sandbox Container (from Full House Engine)
 # One container per bot per match. Stateless, disposable.
 #
 # Security properties enforced at runtime (see match.py docker run call):
@@ -18,7 +18,7 @@ FROM python:3.10-slim
 
 # Install only what bots are allowed to use.
 # Participants can request additions via [library-request] GitHub issues — we
-# vet and rebuild the image once before D1.
+# vet and rebuild the image before the event.
 #
 # eval7 quirk: its setup.py imports Cython at the top, so pip's default build
 # isolation (which spins up an empty venv) breaks the install. Two-step:

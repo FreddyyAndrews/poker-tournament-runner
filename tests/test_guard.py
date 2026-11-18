@@ -1,5 +1,5 @@
 """Tests for keeping bot code away from the rest of the machine
-(sandbox/guard.py): the environment bots get, the audit hook that confines a
+(pokercore/sandbox/guard.py): the environment bots get, the audit hook that confines a
 local bot process to its folder, and the validator's secrets rules."""
 import json
 import os
@@ -13,12 +13,12 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from sandbox import guard
-from sandbox.match import BotProcess
-from sandbox.validator import check_static
+from pokercore.sandbox import guard
+from pokercore.botproc import BotProcess
+from pokercore.validator import check_static
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-VALIDATOR = os.path.join(REPO, "sandbox", "validator.py")
+VALIDATOR = os.path.join(REPO, "pokercore", "validator.py")
 
 STATE = {"type": "action_request", "hand_id": "h1", "hand_num": 0, "street": "preflop",
          "seat_to_act": 0, "your_bot_id": "probe", "pot": 150, "community_cards": [],
@@ -28,12 +28,22 @@ STATE = {"type": "action_request", "hand_id": "h1", "hand_num": 0, "street": "pr
 
 
 def test_bots_get_a_short_environment_without_secrets():
-    env = guard.safe_env({"PATH": "/bin", "HOME": "/h", "BOT_SEED": "1", "JEV_MODEL": "jev-latest",
-                          "JEV_API_KEY": "k", "GTO_WIZARD_API_KEY": "k", "AWS_SECRET_ACCESS_KEY": "k",
-                          "GITHUB_TOKEN": "t", "BOT_PASSWORD": "p", "EDITOR": "vim",
-                          "POKER_PROXY_URL": "http://127.0.0.1:8766"})
-    assert env == {"PATH": "/bin", "HOME": "/h", "BOT_SEED": "1", "JEV_MODEL": "jev-latest",
-                   "POKER_PROXY_URL": "http://127.0.0.1:8766"}
+    host = {"PATH": "/bin", "HOME": "/h", "BOT_SEED": "1", "JEV_MODEL": "jev-latest",
+            "JEV_API_KEY": "k", "GTO_WIZARD_API_KEY": "k", "AWS_SECRET_ACCESS_KEY": "k",
+            "GITHUB_TOKEN": "t", "BOT_PASSWORD": "p", "EDITOR": "vim",
+            "POKER_PROXY_URL": "http://127.0.0.1:8766"}
+    # the core's own allowlist
+    assert guard.safe_env(host) == {"PATH": "/bin", "HOME": "/h", "BOT_SEED": "1"}
+    # a host can let more through (the arena does, for the jev bots), but never a secret
+    allowed = {**host, "BOT_ENV_ALLOW": "JEV_*,POKER_PROXY_URL"}
+    assert guard.safe_env(allowed) == {"PATH": "/bin", "HOME": "/h", "BOT_SEED": "1",
+                                       "JEV_MODEL": "jev-latest", "POKER_PROXY_URL": "http://127.0.0.1:8766",
+                                       "BOT_ENV_ALLOW": "JEV_*,POKER_PROXY_URL"}
+
+
+def test_the_arena_lets_its_jev_settings_through():
+    import arena  # noqa: F401  (sets BOT_ENV_ALLOW unless the host already did)
+    assert guard.safe_env({**os.environ, "JEV_MODEL": "m"}).get("JEV_MODEL") == "m"
 
 
 def static_errors(tmp_path, source):

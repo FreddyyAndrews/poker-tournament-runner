@@ -18,7 +18,7 @@ from arena import formats
 from arena.events import EVENTS_FILE, SUMMARY_FILE, has_events, iter_lines
 from arena.formats import bracket, round_robin
 from arena.server import status as status_rule
-from arena.seeds import derive_seed
+from pokercore.seeds import derive_seed
 
 
 def _summary(match_dir: Path):

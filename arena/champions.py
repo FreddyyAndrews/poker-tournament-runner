@@ -27,7 +27,7 @@ from arena import bots as botlib
 REPO_ROOT = botlib.REPO_ROOT
 CHAMPIONS_DIR = REPO_ROOT / "champions"
 INDEX_FILE = CHAMPIONS_DIR / "index.json"
-VALIDATOR = REPO_ROOT / "sandbox" / "validator.py"
+VALIDATOR = REPO_ROOT / "pokercore" / "validator.py"
 
 
 def load_index() -> list:

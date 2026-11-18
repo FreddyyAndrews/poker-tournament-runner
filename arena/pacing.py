@@ -15,6 +15,8 @@ written, with stopped = "cancelled").
 
 import threading
 
+from pokercore.table import Cancelled  # noqa: F401  (re-exported; defined with the table)
+
 # Pause per event type, as a multiple of pace_ms.
 PAUSE = {
     "hand_start": 1.0,
@@ -33,8 +35,6 @@ PAUSE = {
 DEFAULT_PACE_MS = 600
 
 
-class Cancelled(Exception):
-    pass
 
 
 class Pacer:

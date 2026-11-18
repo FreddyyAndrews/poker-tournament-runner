@@ -33,10 +33,10 @@ from pathlib import Path
 import eval7
 
 import arena
-from arena import structures
+from pokercore import structures
 from arena.events import DEFAULT_RUNS_DIR, EventLog
 from arena.pacing import Cancelled, Pacer
-from arena.seats import Seat
+from pokercore.seats import Seat
 from arena.table import MATCH_LOG_MAX_ENTRIES, MatchConfig, bot_result, diagnostics, \
     make_bot_seats, rank, warm_up
 
@@ -144,7 +144,7 @@ class HandTracker:
 
     seats: {name: table seat}; sb, bb: the names in each blind. Feed it the
     history tokens in order with apply(); it knows whose turn it is, the bets
-    and stacks, and builds the state dict a bot sees (as engine/game.py does).
+    and stacks, and builds the state dict a bot sees (as pokercore/engine.py does).
     """
 
     def __init__(self, seats: dict, sb: str, bb: str, stack: int, blinds: dict):
@@ -230,7 +230,7 @@ class HandTracker:
         return legal, None
 
     def state_for(self, name, hole, board, hand_id, hand_num, legal=None, raise_range=None) -> dict:
-        """What `name` sees when it is their turn, in engine/game.py's format."""
+        """What `name` sees when it is their turn, in pokercore/engine.py's format."""
         owed = max(0, self.current_bet - self.bets[name])
         min_raise_to = self.current_bet + self.min_raise
         if raise_range:
@@ -259,7 +259,7 @@ class HandTracker:
 
 def to_api_action(reply: dict, state: dict, legal: list, raise_range) -> tuple:
     """A bot's reply as an API action (code, amount), applying the same rules
-    as engine/game.py: unknown actions fold, check/call pick whichever is due,
+    as pokercore/engine.py: unknown actions fold, check/call pick whichever is due,
     raises snap up to the minimum and become all-in past the stack. These APIs
     won't let you fold when you could check, so that becomes a check."""
     act = str(reply.get("action", "fold")).lower().strip()

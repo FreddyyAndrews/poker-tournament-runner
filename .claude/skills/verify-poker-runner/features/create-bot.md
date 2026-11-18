@@ -12,7 +12,7 @@ A participant writes a bot as a folder with a `bot.py` exposing `decide(state)`.
 ## How to get to it (user POV)
 
 - Copy `bots/template/` to `my_bots/<name>/` and edit `bot.py` (README "Writing your bot").
-- `make validate BOT=my_bots/<name>/bot.py`, or `python sandbox/validator.py <path> --json`.
+- `make validate BOT=my_bots/<name>/bot.py`, or `python pokercore/validator.py <path> --json`.
 - `poker bots` lists it; on the web UI, **New** shows it under Players with a code hash.
 
 ## Driving it with Playwright and the poker CLI

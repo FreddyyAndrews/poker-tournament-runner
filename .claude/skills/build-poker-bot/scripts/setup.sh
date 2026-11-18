@@ -62,5 +62,5 @@ if curl -sf "${POKER_PROXY_URL:-http://127.0.0.1:8766}/health" >/dev/null; then
 else
   echo "Outside-bot proxy: NOT running. Start it from the main worktree (see the skill) before playing Slumbot."
 fi
-"$PY" "$WT/sandbox/validator.py" "$WT/my_bots/$NAME/bot.py" --json 2>/dev/null \
+"$PY" "$WT/pokercore/validator.py" "$WT/my_bots/$NAME/bot.py" --json 2>/dev/null \
   | "$PY" -c "import json,sys; d=json.load(sys.stdin); print('Validator:', 'PASS' if d['passed'] else 'FAIL', d['errors'])"

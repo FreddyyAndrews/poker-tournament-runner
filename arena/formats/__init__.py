@@ -26,10 +26,10 @@ from pathlib import Path
 import yaml
 
 from arena import bots as botlib
-from arena import structures
+from pokercore import structures
 from arena.events import DEFAULT_RUNS_DIR
 from arena.pacing import Cancelled
-from arena.seeds import derive_seed, new_seed
+from pokercore.seeds import derive_seed, new_seed
 from arena.table import MODES, MatchConfig, run_match
 
 FORMATS = ("table", "bracket", "round_robin", "mtt")

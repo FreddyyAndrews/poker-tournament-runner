@@ -31,9 +31,10 @@ import time
 from pathlib import Path
 
 from arena import bots as botlib
-from arena import external, structures
+from arena import external
+from pokercore import structures
 from arena.events import read_events
-from arena.seeds import derive_seed
+from pokercore.seeds import derive_seed
 from arena.stats import mean_ci
 from arena.table import MatchConfig, run_match
 

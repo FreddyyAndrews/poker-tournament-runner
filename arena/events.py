@@ -9,7 +9,7 @@ read_events() / has_events(), which read either form. `poker compress`
 compresses logs written before this. POKER_COMPRESS_LOGS=0 keeps them plain.
 
 Event types (all carry "type"; per-player data is keyed by bot name):
-  match_start  match_id, seed, config, seats[], engine_hash, arena_version
+  match_start  match_id, seed, config, seats[], engine_hash, core_hash, arena_version
   level        level, sb, bb, ante, hand            (whenever blinds change)
   hand_start   hand, hand_seed, level, blinds, button, sb, bb,
                order[] (bot names by engine seat), seats{name: table seat},

@@ -11,7 +11,7 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from arena import bots as botlib
-from arena import structures
+from pokercore import structures
 from arena.events import read_events
 from arena.table import MatchConfig, run_match
 from arena.verify import verify_events, verify_run

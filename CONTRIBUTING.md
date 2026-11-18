@@ -29,15 +29,15 @@ make test        # engine, runner and arena tests
 make web-test    # if you changed anything under web/
 ```
 
-If you changed `sandbox/runner.py`, rebuild the image with `./sandbox.sh build` and check that a `--docker` match still runs.
+If you changed `pokercore/sandbox/runner.py`, rebuild the image with `./sandbox.sh build` and check that a `--docker` match still runs.
 
 ## What stays stable
 
 Participants write bots against these, so they don't change without a good reason, and never close to an event:
 
-- `engine/game.py`: the poker rules
-- `sandbox/runner.py`: the bot protocol, i.e. how `decide()` is called and the `game_state` it receives
-- `sandbox/Dockerfile`: the libraries available to bots
+- `pokercore/engine.py`: the poker rules
+- `pokercore/sandbox/runner.py`: the bot protocol, i.e. how `decide()` is called and the `game_state` it receives
+- `pokercore/sandbox/Dockerfile`: the libraries available to bots
 
 New `game_state` keys can be added, but existing keys keep their names and meaning.
 

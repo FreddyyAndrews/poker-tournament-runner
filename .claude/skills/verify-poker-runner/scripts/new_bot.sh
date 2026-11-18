@@ -12,6 +12,6 @@ DEST="$REPO/my_bots/$NAME"
 [ -e "$DEST" ] && { echo "$DEST already exists" >&2; exit 1; }
 mkdir -p "$DEST"; cp "$SRC" "$DEST/bot.py"
 echo "bot $NAME" >> "$EVID/scaffold.txt"
-"$PY" "$REPO/sandbox/validator.py" "$DEST/bot.py" --json > "$EVID/validate_$NAME.json" 2> "$EVID/validate_$NAME.stderr" || true
+"$PY" "$REPO/pokercore/validator.py" "$DEST/bot.py" --json > "$EVID/validate_$NAME.json" 2> "$EVID/validate_$NAME.stderr" || true
 echo "$DEST/bot.py"
 "$PY" -c "import json,sys; d=json.load(open('$EVID/validate_$NAME.json')); print('validator:', 'PASS' if d['passed'] else 'FAIL', d['errors']); sys.exit(0 if d['passed'] else 1)"

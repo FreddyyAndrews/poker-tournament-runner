@@ -25,11 +25,12 @@ from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 
 import arena
+import pokercore
 from arena.events import EventLog
 from arena import formats
 from arena.formats import match_record
 from arena.pacing import Cancelled, Pacer
-from arena.seeds import derive_seed
+from pokercore.seeds import derive_seed
 from arena.table import (Table, bot_result, diagnostics, engine_hash, make_bot_seats,
                          rank, warm_up)
 
@@ -115,7 +116,8 @@ def play_mtt(seats, match_cfg, table_size: int, match_id: str, log, workers: int
                  format="mtt", table_size=table_size,
                  seats=[{**s.info(), "warmup": warm[s.name]} for s in seats],
                  tables={tid: [s.name if s else None for s in t.slots] for tid, t in tables.items()},
-                 engine_hash=engine_hash(), arena_version=arena.__version__)
+                 engine_hash=engine_hash(), core_hash=pokercore.core_hash(),
+                 arena_version=arena.__version__)
 
         pool = ThreadPoolExecutor(max_workers=max(1, workers))
         try:

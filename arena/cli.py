@@ -7,9 +7,10 @@ import time
 from pathlib import Path
 
 from arena import bots as botlib
-from arena import formats, structures
+from arena import formats
+from pokercore import structures
 from arena.events import DEFAULT_RUNS_DIR, SUMMARY_FILE
-from arena.seats import Seat
+from pokercore.seats import Seat
 from arena.table import MatchConfig, run_match
 from arena.verify import verify_run
 
@@ -379,7 +380,7 @@ def _print_run(r):
         print(line)
     if fmt == "bracket":
         print("\nBracket:")
-        from arena.seeds import derive_seed
+        from pokercore.seeds import derive_seed
         for m in r["matches"]:
             res = {x["bot"]: x for x in m["results"]}
             w, l, how = formats.two_player_winner(m, derive_seed(r["seed"], "tiebreak", m["match_id"]))

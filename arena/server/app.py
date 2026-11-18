@@ -26,7 +26,8 @@ from pydantic import BaseModel
 
 import arena
 from arena import bots as botlib
-from arena import formats, structures
+from arena import formats
+from pokercore import structures
 from arena.events import DEFAULT_RUNS_DIR, EVENTS_FILE, SUMMARY_FILE, has_events, is_compressed, \
     iter_lines
 from arena.pacing import DEFAULT_PACE_MS

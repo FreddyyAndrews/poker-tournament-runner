@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from arena import external, slumbot
 from arena.events import read_events
-from arena.seats import Seat
+from pokercore.seats import Seat
 from arena.verify import verify_match_dir
 
 # Four real hands (always checking or calling; the last shoves and Slumbot folds)

@@ -29,7 +29,7 @@ SLOW_BOT = ("import time\ndef decide(s):\n    if s.get('type') == 'warmup':\n   
 
 
 def child_bot_processes():
-    out = subprocess.run(["pgrep", "-P", str(os.getpid()), "-f", "sandbox/runner.py"],
+    out = subprocess.run(["pgrep", "-P", str(os.getpid()), "-f", "pokercore/sandbox/runner.py"],
                          capture_output=True, text=True).stdout
     return out.split()
 

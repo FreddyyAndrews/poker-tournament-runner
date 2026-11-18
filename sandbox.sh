@@ -10,7 +10,7 @@ IMAGE="fullhouse-sandbox:latest"
 
 build() {
   echo "Building sandbox image..."
-  docker build -t "$IMAGE" ./sandbox
+  docker build -t "$IMAGE" ./pokercore/sandbox
   echo "Done: $IMAGE"
 }
 

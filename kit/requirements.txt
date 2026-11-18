@@ -1,0 +1,6 @@
+# The libraries bots may use, at the versions installed in the sandbox image
+# (pokercore/sandbox/Dockerfile). eval7==0.1.7 is installed separately: see `make install`.
+numpy==1.26.4
+scipy==1.13.0
+treys==0.1.8
+scikit-learn==1.5.2
