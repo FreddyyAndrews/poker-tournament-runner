@@ -37,8 +37,9 @@ def decide(game_state: dict) -> dict:
       hand_num          hand number in this match, from 0
       button_seat, sb_seat, bb_seat, seat_to_act
       players           public info per seat: seat, bot_id, stack, state, bet_this_street, ...
-      action_log        every action this hand: {"seat", "bot_id", "action", "amount"}
-      match_action_log  the last 200 actions across the match, with "hand_num"
+      action_log        every action this hand: {"seat", "bot_id", "action", "amount", "street"}
+      match_action_log  the last 200 actions across the match, with "hand_num", plus
+                        {"action": "show", "cards": [...]} for each player at a showdown
 
     Debugging: anything you print() is saved with the decision, and you can add
     a JSON-serialisable "debug" value to what you return, e.g.

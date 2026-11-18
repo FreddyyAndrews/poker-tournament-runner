@@ -236,7 +236,8 @@ class Table:
                 error=reply.get("error"), error_detail=reply.get("error_detail"),
             )
             self.match_action_log.append({"hand_num": hand_num, "seat": e2t[seat], "bot_id": name,
-                                          "action": applied["action"], "amount": applied["amount"]})
+                                          "action": applied["action"], "amount": applied["amount"],
+                                          "street": seen_state["street"]})
             seen = self._log_engine_events(engine, seen, hand_num, e2t, skip_actions=True)
             steps += 1
             if steps > MAX_STEPS_PER_HAND:
@@ -279,12 +280,17 @@ class Table:
                 # bots see posts in match_action_log just as in action_log
                 self.match_action_log.append({"hand_num": hand_num, "seat": e2t[e["seat"]],
                                               "bot_id": e["bot_id"], "action": e["action"],
-                                              "amount": e["amount"]})
+                                              "amount": e["amount"], "street": "preflop"})
             elif t == "street_start" and e["street"] != "preflop":
                 self._emit("deal", hand=hand_num, street=e["street"], board=e["community_cards"])
             elif t == "showdown":
                 self._emit("showdown", hand=hand_num, board=e["community_cards"],
                            reveal=e["revealed"], ranks=e["hand_strengths"])
+                # cards shown at showdown are public: bots see them in match_action_log
+                for bot, cards in e["revealed"].items():
+                    self.match_action_log.append({"hand_num": hand_num, "seat": self.seat_of.get(bot),
+                                                  "bot_id": bot, "action": "show", "amount": 0,
+                                                  "cards": list(cards), "street": "showdown"})
                 for w in e["winners"]:
                     self._emit("award", hand=hand_num, bot=w["bot_id"], amount=w["amount"],
                                pot=w["pot_type"])

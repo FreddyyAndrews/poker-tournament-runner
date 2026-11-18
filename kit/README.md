@@ -123,6 +123,8 @@ How the engine reads your reply:
   afford becomes all-in.
 - There's no separate "bet" action: the first bet on a street is a `raise`, and
   appears as `raise` in the logs.
+- An `all_in` for no more than the current bet is a call for all your chips; it
+  appears as `all_in` in the logs.
 
 `game_state` contains:
 
@@ -145,8 +147,8 @@ How the engine reads your reply:
 | `hand_id` | `str` | A unique id for the hand |
 | `blinds` | `dict` | This hand's blinds, e.g. `{"sb": 50, "bb": 100, "ante": 0}` |
 | `players` | `list` | Public info for each seat: `seat`, `bot_id`, `stack`, `state` (`active`, `folded`, `all_in`, `busted`), `is_folded`, `is_all_in`, `bet_this_street`, `hole_cards` (always `None` for opponents) |
-| `action_log` | `list` | Every action so far this hand, each `{"seat", "bot_id", "action", "amount"}`, including the `small_blind`, `big_blind` and `ante` posts |
-| `match_action_log` | `list` | The last 200 entries across the whole match (this hand included): the same entries as `action_log`, plus `hand_num` |
+| `action_log` | `list` | Every action so far this hand, each `{"seat", "bot_id", "action", "amount", "street"}`, including the `small_blind`, `big_blind` and `ante` posts |
+| `match_action_log` | `list` | The last 200 entries across the whole match (this hand included): the same entries as `action_log` plus `hand_num`, and a `show` entry with the `cards` of every player who reached a showdown |
 | `time_limit_ms` | `int` | Your deadline for this decision |
 
 **Heads-up positions:** the button posts the small blind and acts first before
@@ -158,10 +160,25 @@ on that street. For `call` it is the chips added, for posts the chips posted, an
 for `check` and `fold` it is 0. Antes are dead money and don't count toward
 anyone's bet on the street.
 
-**Tracking your opponent:** `match_action_log` and the `bot_id` on every entry
-let you build a picture of how your opponent plays across hands: how often it
-folds, raises, calls down. Use `bot_id` rather than `seat` to tell players
-apart.
+**Tracking your opponent:** `match_action_log` lets you build a picture of how
+your opponent plays across hands: how often it folds, raises or calls down, and
+on which street (`street` is `preflop`, `flop`, `turn` or `river`). When a hand
+reaches a showdown, an entry for each player still in shows their cards:
+
+```python
+{"hand_num": 6, "seat": 1, "bot_id": "opponent", "action": "show", "amount": 0,
+ "cards": ["9c", "8c"], "street": "showdown"}
+```
+
+so you can see what your opponent actually held when it bet or called. Hands
+won without a showdown reveal nothing. Use `bot_id` rather than `seat` to tell
+players apart, and expect entries whose `action` you don't use (posts, `show`):
+skip them rather than assuming every entry is a bet.
+
+**Each match is a fresh start:** your bot's process starts at the beginning of a
+match and ends with it, so module-level variables (opponent statistics, caches)
+last for exactly one match. `match_action_log` keeps only the last 200 entries;
+keep longer-running statistics in your own variables.
 
 **Before hand 1** your bot gets one call with `{"type": "warmup"}` and a long
 deadline, so slow imports and loading happen before the clock matters. Return

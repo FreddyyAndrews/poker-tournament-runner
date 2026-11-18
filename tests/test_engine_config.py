@@ -208,14 +208,15 @@ def test_action_log_and_state_identify_bots_by_name():
     state = eng.apply_action(state["seat_to_act"], {"action": "raise", "amount": 300})
     assert state["your_bot_id"] == ids[state["seat_to_act"]]
     for entry in state["action_log"]:
-        assert set(entry) == {"seat", "bot_id", "action", "amount"}
+        assert set(entry) == {"seat", "bot_id", "action", "amount", "street"}
+        assert entry["street"] == "preflop"
         assert entry["bot_id"] == ids[entry["seat"]]
     assert [e["bot_id"] for e in state["action_log"] if e["action"] == "ante"] == ids
     blinds = {e["action"]: e["bot_id"] for e in state["action_log"]
               if e["action"] in ("small_blind", "big_blind")}
     assert blinds == {"small_blind": "bob", "big_blind": "carol"}
     assert state["action_log"][-1] == {"seat": 0, "bot_id": "alice",
-                                       "action": "raise", "amount": 300}
+                                       "action": "raise", "amount": 300, "street": "preflop"}
 
 
 def test_bot_id_stable_when_seats_shift():

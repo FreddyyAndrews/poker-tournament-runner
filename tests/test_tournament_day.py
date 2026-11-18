@@ -107,3 +107,30 @@ def test_a_qualifier_is_never_paced(tmp_path):
                           "max_cycles": 1, "pace_ms": 600})
     job.thread.join(120)
     assert job.status == "complete"
+
+
+def test_bots_see_the_street_of_every_action_and_cards_shown_at_showdown(tmp_path):
+    from pokercore import structures
+    from pokercore.seats import BotSeat
+    from pokercore.table import MatchConfig, play_match
+    from arena.verify import MemoryLog
+    from arena import bots as botlib
+    probe = tmp_path / "probe"
+    probe.mkdir()
+    (probe / "bot.py").write_text(
+        "import json\n"
+        "def decide(s):\n"
+        "    every = s['action_log'] + s['match_action_log']\n"
+        "    shows = [a for a in s['match_action_log'] if a['action'] == 'show']\n"
+        "    print(json.dumps({'streets': sorted({a.get('street', '?') for a in every}), 'shows': shows[-2:]}))\n"
+        "    return {'action': 'check'} if s['can_check'] else {'action': 'call'}\n")
+    seats = [BotSeat(s, seed=1, use_docker=False) for s in botlib.resolve_all([str(probe), "template"])]
+    log = MemoryLog()
+    play_match(seats, MatchConfig(mode="fixed", hands=30, structure=structures.flat(50, 100), seed=5), "t", log)
+    import json
+    seen = [json.loads(e["logs"]) for e in log.events if e["type"] == "decision" and e["bot"] == "probe"]
+    streets = {st for s in seen for st in s["streets"]}
+    assert streets <= {"preflop", "flop", "turn", "river", "showdown"} and "flop" in streets
+    shows = [a for s in seen for a in s["shows"]]
+    assert shows and all(len(a["cards"]) == 2 and a["street"] == "showdown" for a in shows)
+    assert {a["bot_id"] for a in shows} == {"probe", "template"}            # both players' cards

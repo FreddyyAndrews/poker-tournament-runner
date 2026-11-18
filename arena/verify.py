@@ -64,6 +64,11 @@ def _normalise(event: dict) -> dict:
     if t == "decision":
         for k in _LIVE_DECISION_FIELDS:
             e.pop(k, None)
+        # action_log entries carry "street" since Nov 2026; older logs don't, and
+        # the street of every action follows from the cards, so it isn't compared
+        if isinstance(e.get("state"), dict) and e["state"].get("action_log"):
+            e["state"] = {**e["state"], "action_log": [{k: v for k, v in a.items() if k != "street"}
+                                                       for a in e["state"]["action_log"]]}
     elif t == "match_start":
         e = {"type": t, "match_id": e["match_id"], "seed": e["seed"], "config": e["config"],
              "seats": [s["name"] for s in e["seats"]], "tables": e.get("tables")}

@@ -601,6 +601,7 @@ class PokerEngine:
             "bot_id": self.players[seat].bot_id,
             "action": action,
             "amount": amount,
+            "street": self.street,
         })
 
     def _emit(self, event_type: str, data: dict):
