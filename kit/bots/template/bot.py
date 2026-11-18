@@ -1,5 +1,5 @@
 """
-Bot template. Copy this folder to my_bots/<your_bot>/ and write decide().
+Bot template. Copy this folder to my_bots/<your_team>/ and write decide().
 
   - decide() is called once per decision and has 2 seconds to return, or your
     bot folds. Crashes and invalid actions also fold; your bot stays in the game.
@@ -7,7 +7,7 @@ Bot template. Copy this folder to my_bots/<your_bot>/ and write decide().
     and scikit-learn. Nothing else is installed in the sandbox.
   - No network, no file writes, no subprocesses, no eval/exec. You may read
     your own data/ folder, at import time only.
-  - Check your bot before submitting:  make validate BOT=my_bots/<your_bot>
+  - Check your bot before submitting:  make validate BOT=my_bots/<your_team>
 
 The full list of what decide() receives is in the README ("What your bot
 sees"); the most useful keys are summarised below.

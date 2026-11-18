@@ -65,10 +65,10 @@ Then, with the environment active:
 
 ```bash
 make install                                   # eval7, numpy, scipy, treys, scikit-learn
-cp -r bots/template my_bots/mybot              # your bot lives in my_bots/mybot/bot.py
-python3 play.py my_bots/mybot bots/caller      # play a match against a calling station
-python3 play.py my_bots/mybot bots/caller --show    # ...and watch every hand
-make validate BOT=my_bots/mybot                # the checks your bot must pass
+cp -r bots/template my_bots/your_team          # name the folder after your team (see Submitting)
+python3 play.py my_bots/your_team bots/caller  # play a match against a calling station
+python3 play.py my_bots/your_team bots/caller --show    # ...and watch every hand
+make validate BOT=my_bots/your_team            # the checks your bot must pass
 ```
 
 `play.py` plays the tournament format by default (heads-up freezeout, standard
@@ -97,7 +97,7 @@ laptop can be slow on half a core:
 
 ```bash
 make sandbox                                   # build the image (once, and after updating the kit)
-python3 play.py my_bots/mybot bots/caller --docker
+python3 play.py my_bots/your_team bots/caller --docker
 ```
 
 ## What your bot sees
@@ -230,9 +230,16 @@ submission.
 1. **Make your own repo.** On the kit's GitHub page, click **Use this template**,
    then clone your new repo and work there. (Keep it private while you work if
    you like.)
-2. **Keep your bot in `my_bots/<team_name>/`**: `bot.py`, plus `data/` if you
-   use one. Use lowercase letters, digits and underscores for the team name.
-   Only that folder is collected; changes anywhere else in your repo are ignored.
+2. **Keep your entry in `my_bots/<team_name>/`**: `bot.py`, plus `data/` if you
+   use one, with the same team name you put on the submission form (lowercase
+   letters, digits and underscores). Only that folder is collected; changes
+   anywhere else in your repo are ignored.
+
+   You can keep other bots in `my_bots/` too (old versions, sparring partners):
+   when a folder matches your team name, it's your entry and the rest are
+   ignored. If no folder matches, your submission only works if `my_bots/`
+   holds exactly one bot; with several and none named after your team, it is
+   rejected, because we won't guess which one you meant.
 3. **Check it:** `make validate BOT=my_bots/<team_name>`.
 4. **Push before the deadline**, make sure the repo is public (or that the
    organisers have access), and submit its link in the form shown at the event.
