@@ -252,3 +252,64 @@ export function QualifierPanel({ p, active }: { p: any; active: boolean }) {
     </div>
   )
 }
+
+// Player profiles (arena/profiles.py): how each bot plays, for commentary.
+const PROFILE_COLUMNS: { key: string; title: string; help: string; unit: '%' | 'x' | 'ms' }[] = [
+  { key: 'vpip', title: 'VPIP', unit: '%', help: 'Voluntarily put money in the pot: % of hands it called or raised before the flop. High = loose, low = tight.' },
+  { key: 'pfr', title: 'PFR', unit: '%', help: 'Preflop raise: % of hands it raised before the flop. Close to VPIP = aggressive; far below = calls a lot.' },
+  { key: 'three_bet', title: '3-bet', unit: '%', help: '% of the time it re-raised when facing a single preflop raise. High = fights back.' },
+  { key: 'aggression', title: 'Aggression', unit: 'x', help: 'Postflop bets and raises per call. Above 2 = drives the action; below 1 = mostly calls.' },
+  { key: 'fold_to_cbet', title: 'Fold to c-bet', unit: '%', help: '% of the time it folded when the preflop raiser bet the flop. High = gives up easily.' },
+  { key: 'wtsd', title: 'Showdown', unit: '%', help: 'Went to showdown: % of the hands where it saw the flop that reached showdown. High = hard to push off a hand.' },
+  { key: 'won_at_sd', title: 'Won at SD', unit: '%', help: '% of its showdowns that won chips. High = its calls and bets are well chosen.' },
+  { key: 'bluff', title: 'Bluff', unit: '%', help: '% of its postflop bets and raises made with under 40% equity against a random hand (the purple timeline markers).' },
+  { key: 'think_ms', title: 'Think', unit: 'ms', help: 'Average time per decision.' },
+]
+
+export function ProfilesTable({ profiles, order }: { profiles: any; order: string[] }) {
+  // Click a heading: high to low, again: low to high, again: back to standings order.
+  const [sort, setSort] = useState<{ key: string; dir: 1 | -1 } | null>(null)
+  const bots: Record<string, any> = profiles?.bots ?? {}
+  const standing = [...order.filter(n => bots[n]), ...Object.keys(bots).filter(n => !order.includes(n)).sort()]
+  if (!standing.length) return null
+  const value = (n: string, key: string) => key === 'bot' ? n : bots[n][key]
+  const names = !sort ? standing : [...standing].sort((a, b) => {
+    const x = value(a, sort.key), y = value(b, sort.key)
+    if (x == null && y == null) return 0
+    if (x == null) return 1                              // no sample: always last
+    if (y == null) return -1
+    const c = typeof x === 'string' ? x.localeCompare(y) : x - y
+    return c * sort.dir
+  })
+  const click = (key: string) => setSort(cur =>
+    !cur || cur.key !== key ? { key, dir: key === 'bot' ? 1 : -1 }
+      : cur.dir === (key === 'bot' ? 1 : -1) ? { key, dir: key === 'bot' ? -1 : 1 } : null)
+  const arrow = (key: string) => sort?.key === key ? (sort.dir === -1 ? ' \u25BC' : ' \u25B2') : ''
+  const head = (key: string, title: string, help: string, right = true) => (
+    <th key={key} className={(right ? 'r ' : '') + 'sortable' + (sort?.key === key ? ' sorted' : '')}
+        title={help} onClick={() => click(key)} aria-sort={sort?.key === key ? (sort.dir === -1 ? 'descending' : 'ascending') : 'none'}>
+      {title}{arrow(key)}</th>
+  )
+  const show = (v: number | null | undefined, unit: string) => v == null ? '-'
+    : unit === '%' ? `${v.toFixed(0)}%` : unit === 'x' ? v.toFixed(1) : v < 10 ? v.toFixed(1) : v.toFixed(0)
+  const pending = profiles.finished - profiles.matches
+  return (
+    <div data-testid="profiles">
+      <table className="list num profiles">
+        <thead><tr>
+          {head('bot', 'Bot', 'Click to sort by name', false)}
+          {head('hands', 'Hands', 'Hands played. Click to sort.')}
+          {PROFILE_COLUMNS.map(c => head(c.key, c.title, c.help + ' Click to sort.'))}
+        </tr></thead>
+        <tbody>
+          {names.map(n => (
+            <tr key={n}><td>{n}</td><td className="r">{(bots[n].hands ?? 0).toLocaleString('en-US')}</td>
+              {PROFILE_COLUMNS.map(c => <td key={c.key} className="r">{show(bots[n][c.key], c.unit)}</td>)}</tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="hint">{pending > 0 ? `Counting: ${profiles.matches.toLocaleString('en-US')} of ${profiles.finished.toLocaleString('en-US')} finished matches so far. ` : ''}
+        Click a heading to sort by it (again to reverse, a third time for standings order); hover for what it measures.</p>
+    </div>
+  )
+}

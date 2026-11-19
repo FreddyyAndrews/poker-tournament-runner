@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api } from '../api'
-import { BracketView, MttView, QualifierPanel, RoundRobinView, SeriesChart } from '../components/dashboards'
+import { BracketView, MttView, ProfilesTable, QualifierPanel, RoundRobinView, SeriesChart } from '../components/dashboards'
 import { ord } from '../components/PokerTable'
 import { StatusPill } from './Home'
 
@@ -192,6 +192,14 @@ export function RunView({ runId }: { runId: string }) {
               ))}
             </tbody>
           </table>
+        </section>
+      )}
+
+      {format === 'qualifier' && p?.profiles && Object.keys(p.profiles.bots ?? {}).length > 0 && (
+        <section className="section">
+          <h2>Player profiles</h2>
+          <ProfilesTable profiles={p.profiles}
+                         order={(d.standings ?? (p.standings?.length ? p.standings : p.provisional) ?? []).map((s: any) => s.bot)} />
         </section>
       )}
 

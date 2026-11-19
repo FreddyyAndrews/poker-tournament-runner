@@ -162,3 +162,21 @@ def test_spectators_see_the_equity_behind_postflop_bets_and_players_dont(tmp_pat
     assert all("equity" not in e for e in others)
     as_player = client.get("/api/matches/m/events?as=template").json()["events"]
     assert all("equity" not in e for e in as_player)
+
+
+def test_player_profiles_describe_how_each_bot_plays(tmp_path):
+    from arena.profiles import run_profiles, STATS_FILE
+    from arena.server.progress import qualifier_progress
+    cfg = formats.RunConfig(format="qualifier", bots=["aggressor", "mathematician", "template"],
+                            blinds="turbo", time_budget_min=10, max_cycles=2, seed=5)
+    formats.run(cfg, run_id="q", runs_dir=tmp_path, workers=3)
+    matches = sorted((tmp_path / "q" / "matches").iterdir())
+    prof = run_profiles(matches, wait=True)
+    assert prof["matches"] == prof["finished"] == 12
+    assert all((m / STATS_FILE).is_file() for m in matches)                   # counted once, saved
+    bots = prof["bots"]
+    assert set(bots) == {"aggressor", "mathematician", "template"}
+    assert bots["aggressor"]["pfr"] > 50 and bots["mathematician"]["pfr"] == 0  # raises always / never
+    for p in bots.values():
+        assert p["hands"] > 0 and 0 <= p["vpip"] <= 100 and p["pfr"] <= p["vpip"]
+    assert qualifier_progress(tmp_path / "q", cfg, "q")["profiles"]["bots"].keys() == bots.keys()

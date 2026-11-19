@@ -471,3 +471,8 @@ table.rr .live-dot { position: absolute; top: 5px; right: 5px; width: 6px; heigh
 tr.qualified td { background: color-mix(in srgb, var(--good) 10%, transparent); }
 .qual-tag { margin-left: 8px; font-size: 11px; padding: 1px 6px; border-radius: 8px;
   color: var(--good); border: 1px solid color-mix(in srgb, var(--good) 50%, transparent); }
+
+/* Player profiles */
+.profiles th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+.profiles th.sortable:hover { color: var(--text); }
+.profiles th.sorted { color: var(--text); }
