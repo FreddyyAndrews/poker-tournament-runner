@@ -5,7 +5,7 @@ import { MatchView } from './pages/MatchView'
 import { RunView } from './pages/RunView'
 
 // Hash routes: #/  #/match/<key>  #/run/<id>  (keys and ids may contain '/').
-type Route = { page: 'home' } | { page: 'new' } | { page: 'match'; key: string; seat?: string; as?: string }
+type Route = { page: 'home' } | { page: 'new' } | { page: 'match'; key: string; seat?: string; as?: string; hand?: number }
   | { page: 'run'; id: string }
 
 function parse(hash: string): Route {
@@ -13,7 +13,8 @@ function parse(hash: string): Route {
   const path = decodeURIComponent(rawPath)
   const q = new URLSearchParams(query)
   if (path.startsWith('match/')) return { page: 'match', key: path.slice(6), seat: q.get('seat') ?? undefined,
-                                          as: q.get('as') ?? undefined }
+                                          as: q.get('as') ?? undefined,
+                                          hand: q.get('hand') ? Number(q.get('hand')) : undefined }
   if (path.startsWith('run/')) return { page: 'run', id: path.slice(4) }
   if (path === 'new') return { page: 'new' }
   return { page: 'home' }
@@ -39,7 +40,7 @@ export function App() {
       <main className="page">
         {route.page === 'home' && <Home />}
         {route.page === 'new' && <Launch />}
-        {route.page === 'match' && <MatchView key={route.key + (route.seat ?? '')} matchKey={route.key}
+        {route.page === 'match' && <MatchView key={route.key + (route.seat ?? '') + (route.hand ?? '')} matchKey={route.key} startHand={route.hand}
                                               seatToken={route.seat} playAs={route.as} />}
         {route.page === 'run' && <RunView key={route.id} runId={route.id} />}
       </main>

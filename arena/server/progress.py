@@ -309,6 +309,8 @@ def qualifier_progress(run_dir: Path, cfg, run_id: str, active: bool = False) ->
                             "live": live})
     from arena.profiles import run_profiles
     profiles = run_profiles(sorted(d for d in mdir_root.iterdir() if d.is_dir()) if mdir_root.is_dir() else [])
+    from arena.sideprizes import run_boards
+    side_prizes = run_boards((d for d in mdir_root.iterdir() if d.is_dir()) if mdir_root.is_dir() else [], run_id)
     complete_cycles = sorted(c for c, n in counts.items() if n >= per_cycle)
     final = [r for r in records if r["cycle"] in complete_cycles]
     started = info.get("started_at")
@@ -321,4 +323,5 @@ def qualifier_progress(run_dir: Path, cfg, run_id: str, active: bool = False) ->
             "elapsed_s": round(elapsed) if elapsed is not None else None,
             "standings": qualifier.standings(cfg, final) if final else [],
             "provisional": qualifier.standings(cfg, records) if records else [],
-            "qualifiers": qualifier.QUALIFIERS, "playing": playing, "profiles": profiles}
+            "qualifiers": qualifier.QUALIFIERS, "playing": playing, "profiles": profiles,
+            "side_prizes": side_prizes}

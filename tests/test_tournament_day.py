@@ -226,3 +226,44 @@ def test_a_stopped_qualifier_still_shows_standings_for_its_complete_cycles(tmp_p
     p = qualifier_progress(tmp_path / "q", cfg, "q", active=False)
     assert p["cycles_complete"] == [1]
     assert len(p["standings"]) == 3 and sum(r["points"] for r in p["standings"]) == 3   # cycle 1 only
+
+
+def test_side_prize_boards_from_a_qualifier(tmp_path):
+    from arena.events import read_events
+    from arena.server.progress import qualifier_progress
+    from arena.sideprizes import BOARDS, PRIZES_FILE, run_boards
+    cfg = formats.RunConfig(format="qualifier", bots=["aggressor", "mathematician", "template", "shark"],
+                            blinds="turbo", time_budget_min=10, max_cycles=2, seed=8)
+    formats.run(cfg, run_id="q", runs_dir=tmp_path, workers=4)
+    mroot = tmp_path / "q" / "matches"
+    out = run_boards(mroot.iterdir(), "q", wait=True)
+    assert out["matches"] == out["finished"] == 24 and all((d / PRIZES_FILE).is_file() for d in mroot.iterdir())
+    boards = out["boards"]
+    assert set(boards) == set(BOARDS)
+
+    def hand_events(entry):
+        ev = read_events(mroot / entry["match_id"])
+        return [e for e in ev if e.get("hand") == entry["hand"]]
+
+    # most won off a single hand: really the biggest win in any match, with both players' cards
+    biggest = max(d for m in mroot.iterdir() for e in read_events(m) if e["type"] == "hand_end"
+                  for d in e["deltas"].values())
+    top = boards["single_hand"][0]
+    assert top["rank"] == 1 and top["amount"] == biggest and top["key"] == f"q/matches/{top['match_id']}"
+    start = next(e for e in hand_events(top) if e["type"] == "hand_start")
+    assert start["hole"][top["bot"]] == top["cards"] and start["hole"][top["opponent"]] == top["opponent_cards"]
+    for r in boards["seven_two"]:
+        assert sorted(c[0] for c in r["cards"]) == ["2", "7"] and r["amount"] > 0
+    for r in boards["lowest_showdown"]:
+        evs = hand_events(r)
+        assert any(e["type"] == "showdown" for e in evs)
+        assert any(e["type"] == "decision" and e["street"] == "river" and e["applied"]["action"] in ("raise", "all_in")
+                   for e in evs)
+    scores = [r["score"] for r in boards["lowest_showdown"]]
+    assert scores == sorted(scores)                                  # weakest winning hand first
+    for r in boards["comeback"]:                                     # only match winners, at their low point
+        ev = read_events(mroot / r["match_id"])
+        assert next(x["bot"] for x in ev[-1]["results"] if x["place"] == 1) == r["bot"]
+        lows = [e["stacks"][r["bot"]] for e in ev if e["type"] == "hand_end"]
+        assert r["chips"] == min(lows)
+    assert qualifier_progress(tmp_path / "q", cfg, "q")["side_prizes"]["boards"].keys() == boards.keys()

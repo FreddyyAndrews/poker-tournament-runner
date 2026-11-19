@@ -18,7 +18,7 @@ const ACTION_DECISIONS = 6
 
 type Tab = 'hand' | 'decision' | 'chart' | 'stats'
 
-export function MatchView({ matchKey, seatToken, playAs }: { matchKey: string; seatToken?: string; playAs?: string }) {
+export function MatchView({ matchKey, seatToken, playAs, startHand }: { matchKey: string; seatToken?: string; playAs?: string; startHand?: number }) {
   const data = useMatch(matchKey, playAs)
   const { timeline, length, status } = data
   const running = status === 'running'
@@ -68,6 +68,15 @@ export function MatchView({ matchKey, seatToken, playAs }: { matchKey: string; s
     timeline.list.forEach((e, i) => { if (e.type === 'hand_start') out.push(i) })
     return out
   }, [timeline, length])
+  // Opened at a hand (#/match/<key>?hand=N, 1-based, e.g. from a side-prize board):
+  // go to the start of that hand once it has loaded, paused, ready to play.
+  const jumped = useRef(false)
+  useEffect(() => {
+    if (jumped.current || !startHand || running) return
+    const at = handStarts[startHand - 1]
+    if (at !== undefined) { jumped.current = true; pb.seek(at) }
+  }, [startHand, handStarts, running, pb])
+
   // Notable hands, marked at their hand_start: showdowns; bluffs (a bet or raise
   // after the flop with under BLUFF_EQUITY equity against a random hand, as the
   // server annotates it for spectators); and action hands, with at least

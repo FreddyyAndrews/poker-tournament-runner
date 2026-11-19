@@ -301,3 +301,70 @@ export function ProfilesTable({ profiles, order }: { profiles: any; order: strin
     </div>
   )
 }
+
+// Side prizes (arena/sideprizes.py): one board per measured prize, every bot's
+// best entry, best first, with a link that opens the match at that hand.
+const SIDE_BOARDS: { key: string; title: string; blurb: string }[] = [
+  { key: 'lowest_showdown', title: 'Lowest winning showdown', blurb: 'The weakest hand to win a pot at showdown, with a bet on the river.' },
+  { key: 'seven_two', title: 'Most won off a 7-2', blurb: 'Most chips won on one hand holding a seven and a two.' },
+  { key: 'single_hand', title: 'Most won off a single hand', blurb: 'Most chips taken from an opponent in one hand.' },
+  { key: 'comeback', title: 'Biggest comeback', blurb: 'The smallest share of the chips a bot fell to in a match it went on to win.' },
+]
+const SUIT: Record<string, string> = { s: '\u2660', h: '\u2665', d: '\u2666', c: '\u2663' }
+function Cards({ cards }: { cards?: string[] | null }) {
+  if (!cards?.length) return <span className="muted">-</span>
+  return <span className="mini-cards">{cards.map(c => (
+    <span key={c} className={c[1] === 'h' || c[1] === 'd' ? 'red' : ''}>{c[0] === 'T' ? '10' : c[0]}{SUIT[c[1]] ?? c[1]}</span>))}</span>
+}
+
+export function SidePrizes({ prizes }: { prizes: any }) {
+  const [open, setOpen] = useState<Record<string, boolean>>({})
+  const boards = prizes?.boards ?? {}
+  if (!SIDE_BOARDS.some(b => boards[b.key]?.length)) return null
+  const n = (x: number) => (x ?? 0).toLocaleString('en-US')
+  const pending = prizes.finished - prizes.matches
+  return (
+    <div className="side-prizes" data-testid="side-prizes">
+      {SIDE_BOARDS.map(b => {
+        const rows: any[] = boards[b.key] ?? []
+        const shown = open[b.key] ? rows : rows.slice(0, 5)
+        const comeback = b.key === 'comeback'
+        return (
+          <div key={b.key} className="side-board" data-testid={`board-${b.key}`}>
+            <h3>{b.title}</h3>
+            <p className="hint" style={{ marginTop: 0 }}>{b.blurb}</p>
+            {rows.length === 0 ? <p className="muted">Nobody yet.</p> : (
+              <table className="list num">
+                <thead>{comeback
+                  ? <tr><th>#</th><th>Bot</th><th className="r">Low point</th><th>Against</th><th /></tr>
+                  : <tr><th>#</th><th>Bot</th><th>Hand</th><th>Against</th><th>Board</th><th className="r">Won</th><th /></tr>}</thead>
+                <tbody>
+                  {shown.map(r => (
+                    <tr key={r.bot} className={r.rank === 1 ? 'qualified' : ''}>
+                      <td>{r.rank}</td><td>{r.bot}</td>
+                      {comeback ? <>
+                        <td className="r">{(r.share * 100).toFixed(1)}% <span className="muted">({n(r.chips)} of {n(r.total)}, hand {r.hand + 1})</span></td>
+                        <td>{r.opponent}</td>
+                      </> : <>
+                        <td><Cards cards={r.cards} />{r.made && <span className="muted"> {r.made}</span>}</td>
+                        <td>{r.opponent} <Cards cards={r.opponent_cards} />{r.opponent_made && <span className="muted"> {r.opponent_made}</span>}</td>
+                        <td>{r.board?.length ? <Cards cards={r.board} /> : <span className="muted">{r.showdown ? '' : 'no flop'}</span>}
+                          {!r.showdown && r.board?.length > 0 && <span className="muted"> (folded)</span>}</td>
+                        <td className="r">+{n(r.amount)}</td>
+                      </>}
+                      <td className="r"><a href={`#/match/${r.key}?hand=${r.hand + 1}`} title={`Open ${r.match_id} at hand ${r.hand + 1}`}>
+                        <button className="primary small">Watch</button></a></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+            {rows.length > 5 && <button className="ghost small" onClick={() => setOpen(o => ({ ...o, [b.key]: !o[b.key] }))}>
+              {open[b.key] ? 'Show the top 5' : `Show all ${rows.length}`}</button>}
+          </div>
+        )
+      })}
+      {pending > 0 && <p className="hint">Counting: {n(prizes.matches)} of {n(prizes.finished)} finished matches so far.</p>}
+    </div>
+  )
+}

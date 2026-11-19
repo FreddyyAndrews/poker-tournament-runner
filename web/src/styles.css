@@ -480,3 +480,10 @@ tr.qualified td { background: color-mix(in srgb, var(--good) 10%, transparent); 
 /* Match stats tab */
 .match-stats { padding: 12px 16px; overflow: auto; }
 .match-stats td.stat-name { color: var(--text-2); cursor: help; }
+
+/* Side prizes */
+.side-board { margin-bottom: 22px; }
+.side-board h3 { margin: 0 0 2px; font-size: 14px; }
+.mini-cards { display: inline-flex; gap: 3px; }
+.mini-cards span { background: #f4f1ea; color: #16181d; border-radius: 3px; padding: 0 4px; font-weight: 600; font-size: 12px; }
+.mini-cards span.red { color: #c62f2f; }
