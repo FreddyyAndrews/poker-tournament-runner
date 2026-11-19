@@ -26,6 +26,7 @@ is saved as entries/intake.json and printed as a table.
 """
 
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -128,8 +129,11 @@ def intake_one(sub: Submission, entries_dir: Path, use_docker: bool) -> dict:
     try:
         shutil.rmtree(repo, ignore_errors=True)
         repo.parent.mkdir(parents=True, exist_ok=True)
+        # never wait at a password prompt: a private repo we can't read fails at once
         clone = subprocess.run(["git", "clone", "--depth", "1", "--quiet", sub.source, str(repo)],
-                               capture_output=True, text=True, timeout=300)
+                               capture_output=True, text=True, timeout=300, stdin=subprocess.DEVNULL,
+                               env={**os.environ, "GIT_TERMINAL_PROMPT": "0",
+                                    "GIT_SSH_COMMAND": "ssh -o BatchMode=yes"})
         rec["cloned_at"] = time.strftime("%Y-%m-%d %H:%M:%S %z")
         if clone.returncode != 0:
             rec["problem"] = "clone failed: " + (clone.stderr.strip().splitlines() or ["?"])[-1]

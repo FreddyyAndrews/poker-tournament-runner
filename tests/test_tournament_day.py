@@ -180,3 +180,49 @@ def test_player_profiles_describe_how_each_bot_plays(tmp_path):
     for p in bots.values():
         assert p["hands"] > 0 and 0 <= p["vpip"] <= 100 and p["pfr"] <= p["vpip"]
     assert qualifier_progress(tmp_path / "q", cfg, "q")["profiles"]["bots"].keys() == bots.keys()
+
+
+def test_qualifier_ties_on_points_are_settled_head_to_head():
+    from arena.formats import qualifier
+
+    def leg(cycle, a, b, winner, leg_no):
+        loser = b if winner == a else a
+        res = [{"bot": winner, "place": 1, "final_stack": 20000, "delta": 10000, "hands_played": 50,
+                "bb_per_100": 10.0, "busted_on_hand": None, "timeouts": 0, "errors": 0},
+               {"bot": loser, "place": 2, "final_stack": 0, "delta": -10000, "hands_played": 50,
+                "bb_per_100": -10.0, "busted_on_hand": 49, "timeouts": 0, "errors": 0}]
+        return {"match_id": f"c{cycle:02d}_{a}_vs_{b}_leg{leg_no}", "cycle": cycle, "players": [a, b],
+                "leg": leg_no, "results": res, "hands": 50, "stopped": "one_player_left"}
+
+    def pairing(a, b, winner):                      # winner takes both legs
+        return [leg(1, a, b, winner, 1), leg(1, a, b, winner, 2)]
+    # zed and amy both finish on 2 points; zed beat amy, so zed is ahead despite the alphabet
+    recs = (pairing("amy", "zed", "zed") + pairing("amy", "bob", "amy") + pairing("amy", "cat", "amy")
+            + pairing("zed", "bob", "zed") + pairing("zed", "cat", "cat") + pairing("bob", "cat", "bob"))
+    cfg = formats.RunConfig(format="qualifier", bots=["amy", "bob", "cat", "zed"])
+    table = qualifier.standings(cfg, recs)
+    assert [(r["bot"], r["points"]) for r in table[:2]] == [("zed", 2.0), ("amy", 2.0)]
+    assert table[0]["head_to_head"] == 1.0 and table[1]["head_to_head"] == 0.0
+    assert [(r["bot"], r["place"]) for r in table] == [("zed", 1), ("amy", 2), ("bob", 3), ("cat", 4)]
+
+
+def test_a_stopped_qualifier_still_shows_standings_for_its_complete_cycles(tmp_path):
+    import threading
+    import pytest
+    from arena.pacing import Cancelled
+    from arena.server.progress import qualifier_progress
+    cancel = threading.Event()
+    done = []
+
+    def progress(e):
+        if e["event"] == "match_done":
+            done.append(e)
+            if len(done) == 8:                      # cycle 1 (6 matches) done, cycle 2 under way
+                cancel.set()
+    cfg = formats.RunConfig(format="qualifier", bots=["aggressor", "mathematician", "template"],
+                            blinds="turbo", time_budget_min=10, max_cycles=3, seed=6)
+    with pytest.raises(Cancelled):
+        formats.run(cfg, run_id="q", runs_dir=tmp_path, workers=1, progress=[progress], cancel=cancel)
+    p = qualifier_progress(tmp_path / "q", cfg, "q", active=False)
+    assert p["cycles_complete"] == [1]
+    assert len(p["standings"]) == 3 and sum(r["points"] for r in p["standings"]) == 3   # cycle 1 only

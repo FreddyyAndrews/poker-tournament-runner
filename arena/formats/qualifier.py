@@ -12,8 +12,10 @@ the same number of times. Only complete cycles count.
 
 Standings, over all cycles: each pairing in each cycle is won by whoever is
 up on chips across its two legs (equal = draw). Points: win 1, draw 0.5.
-Ties are broken by chips won, then bb/100, then name. The top `qualifiers`
-bots (4 by default) go through.
+Bots level on points are separated by their head-to-head results against each
+other, then bb/100. Bots still level share a place; if that happens at the
+cut-off, more than `qualifiers` (4) bots show as qualified and the organizer
+settles it with a playoff.
 """
 
 import json
@@ -103,7 +105,8 @@ def pairing_results(records) -> list:
 def standings(cfg, records) -> list:
     totals = combine(records)
     wdl = {bot: [0, 0, 0] for bot in totals}
-    for p in pairing_results(records):
+    results = pairing_results(records)
+    for p in results:
         for bot in p["players"]:
             i = 1 if p["winner"] is None else 0 if p["winner"] == bot else 2
             wdl.setdefault(bot, [0, 0, 0])[i] += 1
@@ -113,10 +116,26 @@ def standings(cfg, records) -> list:
         rows.append({"bot": bot, "points": w + 0.5 * d, "wins": w, "draws": d, "losses": l,
                      **{k: t[k] for k in ("delta", "hands_played", "bb_per_100", "timeouts",
                                           "errors", "matches")}})
-    rows.sort(key=lambda r: (-r["points"], -r["delta"], -r["bb_per_100"], r["bot"]))
+    # Head-to-head: among bots level on points, the points each won in the
+    # pairings between just those bots. (Chips can't separate them: in
+    # freezeouts a pairing is worth a whole stack or nothing, so equal points
+    # means equal chips.)
+    level = {}
+    for r in rows:
+        level.setdefault(r["points"], set()).add(r["bot"])
+    h2h = {r["bot"]: 0.0 for r in rows}
+    for p in results:
+        a, b = p["players"]
+        tied = next((g for g in level.values() if a in g and b in g), None)
+        if tied and len(tied) > 1:
+            for bot in (a, b):
+                h2h[bot] += 0.5 if p["winner"] is None else 1.0 if p["winner"] == bot else 0.0
+    for r in rows:
+        r["head_to_head"] = h2h[r["bot"]] if len(level[r["points"]]) > 1 else None
+    rows.sort(key=lambda r: (-r["points"], -h2h[r["bot"]], -r["bb_per_100"], r["bot"]))
     place, prev = 0, None
     for i, r in enumerate(rows):
-        key = (r["points"], r["delta"], r["bb_per_100"])
+        key = (r["points"], h2h[r["bot"]], r["bb_per_100"])
         if key != prev:
             place, prev = i + 1, key
         r["place"] = place
