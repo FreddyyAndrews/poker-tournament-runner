@@ -4,6 +4,7 @@ import { ActionBar } from '../components/ActionBar'
 import { Controls, type Highlight } from '../components/Controls'
 import { HandLog } from '../components/HandLog'
 import { Inspector } from '../components/Inspector'
+import { MatchStats } from '../components/MatchStats'
 import { PokerTable, playerColor } from '../components/PokerTable'
 import { StackChart } from '../components/StackChart'
 import { Standings } from '../components/Standings'
@@ -15,7 +16,7 @@ import { usePlayback } from '../replay/usePlayback'
 const BLUFF_EQUITY = 0.4
 const ACTION_DECISIONS = 6
 
-type Tab = 'hand' | 'decision' | 'chart'
+type Tab = 'hand' | 'decision' | 'chart' | 'stats'
 
 export function MatchView({ matchKey, seatToken, playAs }: { matchKey: string; seatToken?: string; playAs?: string }) {
   const data = useMatch(matchKey, playAs)
@@ -275,10 +276,10 @@ export function MatchView({ matchKey, seatToken, playAs }: { matchKey: string; s
           <Standings state={state} colorOf={colorOf} />
         </div>
         <div className="tabs" role="tablist">
-          {(['hand', 'decision', 'chart'] as Tab[]).map(t => (
+          {(['hand', 'decision', 'chart', 'stats'] as Tab[]).map(t => (
             <button key={t} className={tab === t ? 'on' : ''} onClick={() => setTab(t)} role="tab"
                     data-testid={`tab-${t}`}>
-              {t === 'hand' ? 'Hand log' : t === 'decision' ? 'Decision' : cfg?.mode === 'cash' ? 'Net' : 'Stacks'}
+              {t === 'hand' ? 'Hand log' : t === 'decision' ? 'Decision' : t === 'stats' ? 'Stats' : cfg?.mode === 'cash' ? 'Net' : 'Stacks'}
             </button>
           ))}
         </div>
@@ -286,6 +287,7 @@ export function MatchView({ matchKey, seatToken, playAs }: { matchKey: string; s
           {tab === 'hand' && <HandLog events={timeline.list} from={handFrom} cursor={pb.cursor}
                                       onPick={i => { pb.seek(i); if (timeline.list[i].type === 'decision') setTab('decision') }} />}
           {tab === 'decision' && <Inspector d={state.lastDecision} />}
+          {tab === 'stats' && <MatchStats events={timeline.list} cursor={pb.cursor} names={names} colorOf={colorOf} />}
           {tab === 'chart' && <StackChart events={timeline.list} cursor={pb.cursor} names={names}
                                           start={cfg?.starting_stack ?? 0} cash={cfg?.mode === 'cash'} colorOf={colorOf}
                                           onSeekHand={h => pb.seek(handStarts[h] ?? 0)} />}
