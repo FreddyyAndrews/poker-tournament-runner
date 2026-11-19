@@ -30,6 +30,7 @@ from arena import formats
 from pokercore import structures
 from arena.events import DEFAULT_RUNS_DIR, EVENTS_FILE, SUMMARY_FILE, has_events, is_compressed, \
     iter_lines
+from arena.annotate import annotate, annotate_line
 from arena.pacing import DEFAULT_PACE_MS
 from arena.server.jobs import JobManager, ServerStopping
 from arena.server.mcp_server import build_mcp
@@ -446,7 +447,8 @@ def create_app(runs_dir: Path = DEFAULT_RUNS_DIR, port: int = 8765) -> FastAPI:
     @app.get("/api/matches/{key:path}/events")
     def match_events(key: str, start: int = Query(0, alias="from"), as_: Optional[str] = Query(None, alias="as")):
         d = match_dir(key)
-        events = [player_view(e, as_) for e in _read_lines(d, start)]
+        # spectators also get annotations (e.g. the equity behind a bet); players don't
+        events = [player_view(e, as_) if as_ else annotate(e) for e in _read_lines(d, start)]
         return {"key": key, "from": start, "next": start + len(events), "events": events,
                 "status": match_status(key, d)}
 
@@ -487,7 +489,7 @@ def create_app(runs_dir: Path = DEFAULT_RUNS_DIR, port: int = 8765) -> FastAPI:
                     if not line.strip():
                         continue
                     if n >= start:
-                        out = json.dumps(player_view(json.loads(line), as_)) if as_ else line
+                        out = json.dumps(player_view(json.loads(line), as_)) if as_ else annotate_line(line)
                         yield f"id: {n}\nevent: poker\ndata: {out}\n\n"
                     n += 1
                     if json.loads(line).get("type") == "match_end":

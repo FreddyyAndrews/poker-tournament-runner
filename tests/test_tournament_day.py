@@ -134,3 +134,31 @@ def test_bots_see_the_street_of_every_action_and_cards_shown_at_showdown(tmp_pat
     shows = [a for s in seen for a in s["shows"]]
     assert shows and all(len(a["cards"]) == 2 and a["street"] == "showdown" for a in shows)
     assert {a["bot_id"] for a in shows} == {"probe", "template"}            # both players' cards
+
+
+def test_equity_against_a_random_hand():
+    from arena.annotate import equity_vs_random
+    assert equity_vs_random(("Ah", "5h"), ("Kh", "9h", "2h", "Tc", "3d")) == 1.0      # nut flush, river (exact)
+    assert 0.80 < equity_vs_random(("Ah", "Ad"), ("7c", "8d", "2s")) < 0.90
+    assert equity_vs_random(("7h", "2c"), ("As", "Kd", "Qc")) < 0.30
+    assert equity_vs_random(("9s", "8s"), ("Ts", "Jd", "2c")) == equity_vs_random(("9s", "8s"), ("Ts", "Jd", "2c"))
+
+
+def test_spectators_see_the_equity_behind_postflop_bets_and_players_dont(tmp_path):
+    from fastapi.testclient import TestClient
+    from arena.server.app import create_app
+    from arena.table import run_match, MatchConfig
+    from arena import bots as botlib
+    from pokercore import structures
+    run_match(botlib.resolve_all(["aggressor", "template"]),
+              MatchConfig(mode="fixed", hands=40, structure=structures.flat(50, 100), seed=3),
+              match_id="m", runs_dir=tmp_path)
+    client = TestClient(create_app(runs_dir=tmp_path))
+    seen = client.get("/api/matches/m/events").json()["events"]
+    bets = [e for e in seen if e["type"] == "decision" and e["street"] != "preflop"
+            and e["applied"]["action"] in ("raise", "all_in")]
+    assert bets and all(0 <= e["equity"] <= 1 for e in bets)
+    others = [e for e in seen if e["type"] == "decision" and e not in bets]
+    assert all("equity" not in e for e in others)
+    as_player = client.get("/api/matches/m/events?as=template").json()["events"]
+    assert all("equity" not in e for e in as_player)

@@ -116,6 +116,8 @@ export type Decision = Base & {
   logs: string
   logs_truncated: boolean
   debug: unknown
+  // added for spectators on postflop bets and raises: equity against a random hand (arena/annotate.py)
+  equity?: number
   debug_error: string | null
   error: string | null
   error_detail: string | null

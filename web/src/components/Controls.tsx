@@ -9,8 +9,11 @@ const Icon = {
   nextHand: <svg viewBox="0 0 16 16"><path d="M8 3v10l7-5zM1 3v10l7-5z" /></svg>,
 }
 
-// A notable moment on the timeline, e.g. the start of a hand that went to showdown.
-export type Highlight = { index: number; kind: 'showdown'; label: string }
+// A notable hand on the timeline, marked at its start: one row per kind.
+export type Highlight = { index: number; kind: 'showdown' | 'bluff' | 'action'; label: string }
+const KINDS: { kind: Highlight['kind']; title: string }[] = [
+  { kind: 'showdown', title: 'showdown' }, { kind: 'bluff', title: 'bluff' }, { kind: 'action', title: 'lots of action' },
+]
 
 type Props = {
   pb: Playback
@@ -41,8 +44,9 @@ export function Controls({ pb, length, running, handStarts, currentHand, totalHa
       {length > 1 && highlights.length > 0 && (
         <div className="marks" data-testid="highlights">
           {highlights.map(h => (
-            <button key={h.index} className={`mark ${h.kind}`} title={h.label} aria-label={h.label}
-                    style={{ left: `calc(7px + (100% - 14px) * ${h.index / max})` }}
+            <button key={`${h.kind}-${h.index}`} className={`mark ${h.kind}`} title={h.label} aria-label={h.label}
+                    style={{ left: `calc(7px + (100% - 14px) * ${h.index / max})`,
+                             top: `${1 + 9 * KINDS.findIndex(k => k.kind === h.kind)}px` }}
                     onClick={() => pb.seek(h.index)} />
           ))}
         </div>
@@ -70,6 +74,12 @@ export function Controls({ pb, length, running, handStarts, currentHand, totalHa
           ))}
         </div>
         <span className="grow" />
+        {highlights.length > 0 && (
+          <span className="mark-key" aria-hidden="true">
+            {KINDS.filter(k => highlights.some(h => h.kind === k.kind)).map(k =>
+              <span key={k.kind}><i className={`mark ${k.kind}`} />{k.title}</span>)}
+          </span>
+        )}
         <span className="position num" data-testid="position">
           {currentHand !== null ? `Hand ${currentHand + 1} of ${totalHands}${running ? '+' : ''}` : 'Not started'}
           {' · '}event {pb.cursor + 1} / {length}
