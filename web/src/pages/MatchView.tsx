@@ -13,7 +13,7 @@ import { usePlayback } from '../replay/usePlayback'
 
 // Timeline markers: see `highlights` below. The equity line matches the server's (arena/annotate.py).
 const BLUFF_EQUITY = 0.4
-const ACTION_DECISIONS = 4
+const ACTION_DECISIONS = 6
 
 type Tab = 'hand' | 'decision' | 'chart'
 
