@@ -13,8 +13,10 @@
                     losses don't count against it), divided by how many times
                     it was dealt seven-two. A bot needs SEVEN_TWO_MIN such
                     hands to be ranked. Its best single hand is shown too.
-  lowest_showdown   the weakest hand, by rank, to win a pot at showdown when
-                    there was a bet on the river (split pots don't count)
+  lowest_showdown   the weakest hand, by rank, to win at showdown, where the
+                    winner took at least LOWEST_SHOWDOWN_MIN chips from its
+                    opponent and there was a bet on the river (split pots
+                    don't count)
   comeback          in a match the bot won, the smallest share of the chips it
                     fell to on the way
 
@@ -38,7 +40,8 @@ from arena.annotate import BLUFF_EQUITY, equity_vs_random
 from arena.events import SUMMARY_FILE, read_events
 
 PRIZES_FILE = "prizes.json"
-VERSION = 4
+VERSION = 5
+LOWEST_SHOWDOWN_MIN = 1000     # chips the winner must take for a showdown to count
 BLUFFER_MIN_HANDS = 500        # hands played before a bot is ranked as a bluffer
 SEVEN_TWO_MIN = 30            # seven-two hands dealt before a bot is ranked
 BOARDS = ("bluffer", "seven_two", "lowest_showdown", "comeback")
@@ -151,7 +154,8 @@ def match_entries(events) -> dict:
                     entry["made"], entry["opponent_made"] = ranks.get(bot), ranks.get(opp)
                 if entry["cards"] and _is_seven_two(entry["cards"]):
                     offer("seven_two", bot, entry)
-                if sd and hand["river_bet"] and len(winners) == 1 and len(board_cards) == 5 and entry["cards"]:
+                if sd and hand["river_bet"] and len(winners) == 1 and len(board_cards) == 5 and entry["cards"] \
+                        and deltas[bot] >= LOWEST_SHOWDOWN_MIN:
                     try:
                         score = eval7.evaluate([eval7.Card(c) for c in entry["cards"] + board_cards])
                     except Exception:
@@ -264,7 +268,7 @@ def run_boards(match_dirs, run_id: str = None, wait: bool = False) -> dict:
             r["rank"] = rank
         out[board] = rows
     return {"boards": out, "matches": counted, "finished": finished, "seven_two_min": SEVEN_TWO_MIN,
-            "bluffer_min_hands": BLUFFER_MIN_HANDS}
+            "bluffer_min_hands": BLUFFER_MIN_HANDS, "lowest_showdown_min": LOWEST_SHOWDOWN_MIN}
 
 
 def _ranked(rows: list, key: str) -> list:

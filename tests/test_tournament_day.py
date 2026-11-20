@@ -295,6 +295,7 @@ def test_side_prize_boards_from_a_qualifier(tmp_path):
     ranked = [r["per_dealt"] for r in boards["seven_two"] if r["eligible"]]
     assert ranked == sorted(ranked, reverse=True)
     for r in boards["lowest_showdown"]:
+        assert r["amount"] >= 1000
         evs = hand_events(r)
         assert any(e["type"] == "showdown" for e in evs)
         assert any(e["type"] == "decision" and e["street"] == "river" and e["applied"]["action"] in ("raise", "all_in")

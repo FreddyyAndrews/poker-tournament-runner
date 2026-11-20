@@ -308,7 +308,7 @@ export function ProfilesTable({ profiles, order }: { profiles: any; order: strin
 // best entry, best first, with a link that opens the match at that hand.
 const SIDE_BOARDS: { key: string; title: string; blurb: string }[] = [
   { key: 'bluffer', title: 'Biggest bluffer', blurb: 'Chips won by bluffs per 1,000 hands played. A bluff: a bet or raise after the flop with under 40% equity against a random hand that gets a fold.' },
-  { key: 'lowest_showdown', title: 'Lowest winning showdown', blurb: 'The weakest hand to win a pot at showdown, with a bet on the river.' },
+  { key: 'lowest_showdown', title: 'Lowest winning showdown', blurb: 'The weakest hand to win at least 1,000 chips at showdown, with a bet on the river.' },
   { key: 'seven_two', title: 'Most won off 7-2', blurb: 'Chips won on winning seven-two hands, per seven-two hand dealt. Losses with it don\u2019t count against a bot.' },
   { key: 'comeback', title: 'Biggest comeback', blurb: 'The smallest share of the chips a bot fell to in a match it went on to win.' },
 ]
