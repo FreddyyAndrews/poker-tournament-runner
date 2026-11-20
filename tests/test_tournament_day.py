@@ -245,15 +245,55 @@ def test_side_prize_boards_from_a_qualifier(tmp_path):
         ev = read_events(mroot / entry["match_id"])
         return [e for e in ev if e.get("hand") == entry["hand"]]
 
-    # most won off a single hand: really the biggest win in any match, with both players' cards
-    biggest = max(d for m in mroot.iterdir() for e in read_events(m) if e["type"] == "hand_end"
-                  for d in e["deltas"].values())
-    top = boards["single_hand"][0]
-    assert top["rank"] == 1 and top["amount"] == biggest and top["key"] == f"q/matches/{top['match_id']}"
-    start = next(e for e in hand_events(top) if e["type"] == "hand_start")
-    assert start["hole"][top["bot"]] == top["cards"] and start["hole"][top["opponent"]] == top["opponent_cards"]
+    # biggest bluffer: every counted bluff is a low-equity postflop bet that got a fold
+    from arena.annotate import equity_vs_random
+    total_hands = {}
+    for m in mroot.iterdir():
+        for e in read_events(m):
+            if e["type"] == "hand_end":
+                for bot in e["deltas"]:
+                    total_hands[bot] = total_hands.get(bot, 0) + 1
+    for r in boards["bluffer"]:
+        assert r["hands"] == total_hands[r["bot"]] and r["per_1000"] == round(1000 * r["won"] / r["hands"], 1)
+        assert r["eligible"] == (r["hands"] >= 500)
+        best = r["best"]
+        if not best:
+            assert r["bluffs"] == 0
+            continue
+        assert best["key"] == f"q/matches/{best['match_id']}" and best["amount"] > 0 and len(best["board"]) >= 3
+        evs = hand_events(best)
+        start = next(e for e in evs if e["type"] == "hand_start")
+        assert start["hole"][r["bot"]] == best["cards"] and start["hole"][best["opponent"]] == best["opponent_cards"]
+        fold = next(e for e in evs if e["type"] == "decision" and e["applied"]["action"] == "fold")
+        assert fold["bot"] == best["opponent"] and fold["street"] != "preflop"
+        assert not any(e["type"] == "showdown" for e in evs)
+        bets = [e for e in evs if e["type"] == "decision" and e["bot"] == r["bot"] and e["street"] != "preflop"
+                and e["applied"]["action"] in ("raise", "all_in")]
+        last = bets[-1]["state"]                      # the bet that got the fold
+        assert last["community_cards"] == best["board"]
+        assert equity_vs_random(tuple(best["cards"]), tuple(best["board"])) < 0.4 and best["equity"] < 0.4
+    assert sum(r["bluffs"] for r in boards["bluffer"]) > 0
+    # seven-two: chips won on winning hands per seven-two hand dealt, checked against the logs
+    dealt, won = {}, {}
+    for m in mroot.iterdir():
+        hole = {}
+        for e in read_events(m):
+            if e["type"] == "hand_start":
+                hole = e["hole"]
+            elif e["type"] == "hand_end":
+                for bot, d in e["deltas"].items():
+                    if sorted(c[0] for c in hole[bot]) == ["2", "7"]:
+                        dealt[bot] = dealt.get(bot, 0) + 1
+                        won[bot] = won.get(bot, 0) + max(d, 0)
+    assert {r["bot"] for r in boards["seven_two"]} == set(dealt)
     for r in boards["seven_two"]:
-        assert sorted(c[0] for c in r["cards"]) == ["2", "7"] and r["amount"] > 0
+        assert r["dealt"] == dealt[r["bot"]] and r["won"] == won[r["bot"]]
+        assert r["per_dealt"] == round(won[r["bot"]] / dealt[r["bot"]], 1)
+        assert r["eligible"] == (r["dealt"] >= 30) and (r["rank"] is None) == (not r["eligible"])
+        if r["best"]:
+            assert sorted(c[0] for c in r["best"]["cards"]) == ["2", "7"] and r["best"]["amount"] > 0
+    ranked = [r["per_dealt"] for r in boards["seven_two"] if r["eligible"]]
+    assert ranked == sorted(ranked, reverse=True)
     for r in boards["lowest_showdown"]:
         evs = hand_events(r)
         assert any(e["type"] == "showdown" for e in evs)

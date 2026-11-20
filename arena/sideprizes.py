@@ -1,9 +1,18 @@
 """Side prizes: the measured prizes, tracked across a run from its match logs.
 
-  single_hand       most chips won off a single hand (net: what the bot took
-                    from its opponent)
-  seven_two         most chips won off a hand holding a seven and a two
-                    (suited or not; with or without a showdown)
+  bluffer           biggest bluffer: chips won by bluffs per 1,000 hands
+                    played. A bluff is a hand the bot won by betting or raising
+                    after the flop with under BLUFF_EQUITY equity against a
+                    random hand (from its own cards and the board, as the
+                    timeline's bluff markers) and getting a fold. A bot
+                    needs BLUFFER_MIN_HANDS hands to be ranked. Its biggest
+                    single bluff is shown too.
+  seven_two         most chips won off seven-two, per seven-two hand dealt:
+                    the chips won on every hand the bot won holding a seven
+                    and a two (suited or not; with or without a showdown;
+                    losses don't count against it), divided by how many times
+                    it was dealt seven-two. A bot needs SEVEN_TWO_MIN such
+                    hands to be ranked. Its best single hand is shown too.
   lowest_showdown   the weakest hand, by rank, to win a pot at showdown when
                     there was a bet on the river (split pots don't count)
   comeback          in a match the bot won, the smallest share of the chips it
@@ -25,13 +34,16 @@ from pathlib import Path
 
 import eval7
 
+from arena.annotate import BLUFF_EQUITY, equity_vs_random
 from arena.events import SUMMARY_FILE, read_events
 
 PRIZES_FILE = "prizes.json"
-VERSION = 1
-BOARDS = ("single_hand", "seven_two", "lowest_showdown", "comeback")
+VERSION = 4
+BLUFFER_MIN_HANDS = 500        # hands played before a bot is ranked as a bluffer
+SEVEN_TWO_MIN = 30            # seven-two hands dealt before a bot is ranked
+BOARDS = ("bluffer", "seven_two", "lowest_showdown", "comeback")
 # how entries compare: the value that ranks them, and whether more is better
-_RANK = {"single_hand": ("amount", True), "seven_two": ("amount", True),
+_RANK = {"bluffer": ("amount", True), "seven_two": ("amount", True),
          "lowest_showdown": ("score", False), "comeback": ("share", False)}
 
 
@@ -45,9 +57,35 @@ def _is_seven_two(cards) -> bool:
     return sorted(c[0] for c in cards) == ["2", "7"]
 
 
+COUNTS = ("hands", "bluffs", "bluff_won", "seven_two_dealt", "seven_two_wins", "seven_two_won")
+
+
+def _bluff(bot, folder, hole, board, street):
+    """The bluff, if `bot`'s bet on `board` that made `folder` fold was made
+    with under BLUFF_EQUITY equity against a random hand; None otherwise. Both
+    hands are described as they stood on that board."""
+    mine, theirs = hole.get(bot), hole.get(folder)
+    if not mine or not theirs or len(board) < 3:
+        return None
+    try:
+        equity = equity_vs_random(tuple(mine), tuple(board))
+        cards = [eval7.Card(c) for c in board]
+        a = eval7.evaluate([eval7.Card(c) for c in mine] + cards)
+        b = eval7.evaluate([eval7.Card(c) for c in theirs] + cards)
+    except Exception:
+        return None
+    if equity >= BLUFF_EQUITY:
+        return None
+    return {"bot": bot, "cards": mine, "made": str(eval7.handtype(a)), "equity": round(equity, 3),
+            "opponent": folder, "opponent_cards": theirs, "opponent_made": str(eval7.handtype(b)),
+            "folded_better": b > a, "board": list(board), "street": street, "showdown": False}
+
+
 def match_entries(events) -> dict:
-    """{board: {bot: best entry}} for one match's events."""
+    """{board: {bot: best entry}} for one match's events, plus "counts":
+    {bot: {"seven_two_dealt", "seven_two_wins", "seven_two_won"}}."""
     best = {b: {} for b in BOARDS}
+    counts = {}
 
     def offer(board, bot, entry):
         cur = best[board].get(bot)
@@ -61,7 +99,7 @@ def match_entries(events) -> dict:
         t = e["type"]
         if t == "hand_start":
             hand = {"n": e["hand"], "hole": e.get("hole") or {}, "bb": e.get("bb"), "river_bet": False,
-                    "showdown": None, "blinds": e.get("blinds") or {}}
+                    "showdown": None, "blinds": e.get("blinds") or {}, "aggressor": None, "bluff": None}
         elif t == "match_end":
             first = [r["bot"] for r in e.get("results") or [] if r.get("place") == 1]
             winner = first[0] if len(first) == 1 and e.get("stopped") == "one_player_left" else None
@@ -69,9 +107,16 @@ def match_entries(events) -> dict:
             continue
         elif t == "decision":
             a, st = e["applied"], e.get("state") or {}
-            if e.get("street") == "river" and (a["action"] == "raise" or (
-                    a["action"] == "all_in" and (a.get("amount") or 0) > st.get("current_bet", 0))):
+            aggressive = a["action"] == "raise" or (
+                a["action"] == "all_in" and (a.get("amount") or 0) > st.get("current_bet", 0))
+            if e.get("street") == "river" and aggressive:
                 hand["river_bet"] = True
+            if aggressive:          # remember the latest bet: who, and on which cards
+                hand["aggressor"] = (e["bot"], e.get("street"), list(st.get("community_cards") or []))
+            elif a["action"] == "fold" and hand["aggressor"] and hand["aggressor"][0] != e["bot"] \
+                    and hand["aggressor"][1] != "preflop":
+                hand["bluff"] = _bluff(hand["aggressor"][0], e["bot"], hand["hole"], hand["aggressor"][2],
+                                       hand["aggressor"][1])
         elif t == "showdown":
             hand["showdown"] = e
         elif t == "hand_end":
@@ -80,6 +125,20 @@ def match_entries(events) -> dict:
             for bot, s in stacks.items():
                 if total and (bot not in low or s / total < low[bot][0]):
                     low[bot] = (s / total, hand["n"], s, total)
+            for bot, d in deltas.items():
+                k = counts.setdefault(bot, dict.fromkeys(COUNTS, 0))
+                k["hands"] += 1
+                bl = hand["bluff"]
+                if bl and bl["bot"] == bot and d > 0:
+                    k["bluffs"] += 1
+                    k["bluff_won"] += d
+                    offer("bluffer", bot, {**{x: v for x, v in bl.items() if x != "bot"}, "hand": hand["n"],
+                                           "amount": d, "big_blind": hand["blinds"].get("bb")})
+                if _is_seven_two(hand["hole"].get(bot) or []):
+                    k["seven_two_dealt"] += 1
+                    if d > 0:
+                        k["seven_two_wins"] += 1
+                        k["seven_two_won"] += d
             winners = [b for b, d in deltas.items() if d > 0]
             for bot in winners:
                 opp = next((o for o in deltas if o != bot), None)
@@ -90,7 +149,6 @@ def match_entries(events) -> dict:
                 if sd:
                     ranks = sd.get("ranks") or {}
                     entry["made"], entry["opponent_made"] = ranks.get(bot), ranks.get(opp)
-                offer("single_hand", bot, entry)
                 if entry["cards"] and _is_seven_two(entry["cards"]):
                     offer("seven_two", bot, entry)
                 if sd and hand["river_bet"] and len(winners) == 1 and len(board_cards) == 5 and entry["cards"]:
@@ -105,6 +163,7 @@ def match_entries(events) -> dict:
         share, n, chips, total = low[winner]
         best["comeback"][winner] = {"hand": n, "share": round(share, 4), "chips": chips, "total": total,
                                     "opponent": next((b for b in low if b != winner), None)}
+    best["counts"] = counts
     return best
 
 
@@ -165,6 +224,7 @@ def run_boards(match_dirs, run_id: str = None, wait: bool = False) -> dict:
     {"boards": {board: [entries, best first, each with "bot", "rank", "match_id"
     and "key"]}, "matches": counted, "finished": finished}."""
     best = {b: {} for b in BOARDS}
+    totals = {}
     counted = finished = 0
     for d in sorted(Path(x) for x in match_dirs):
         if not (d / SUMMARY_FILE).is_file():
@@ -177,6 +237,10 @@ def run_boards(match_dirs, run_id: str = None, wait: bool = False) -> dict:
                 continue
             boards = compute(d)
         counted += 1
+        for bot, k in (boards.get("counts") or {}).items():
+            t = totals.setdefault(bot, dict.fromkeys(COUNTS, 0))
+            for name in t:
+                t[name] += k.get(name, 0)
         for board in BOARDS:
             for bot, entry in (boards.get(board) or {}).items():
                 cur = best[board].get(bot)
@@ -185,6 +249,12 @@ def run_boards(match_dirs, run_id: str = None, wait: bool = False) -> dict:
                                         "key": f"{run_id}/matches/{d.name}" if run_id else d.name}
     out = {}
     for board in BOARDS:
+        if board == "seven_two":
+            out[board] = _seven_two_rows(totals, best[board])
+            continue
+        if board == "bluffer":
+            out[board] = _bluffer_rows(totals, best[board])
+            continue
         key, more = _RANK[board]
         rows = sorted(best[board].values(), key=lambda r: (-r[key] if more else r[key], r["bot"]))
         rank, prev = 0, None
@@ -193,4 +263,40 @@ def run_boards(match_dirs, run_id: str = None, wait: bool = False) -> dict:
                 rank, prev = i + 1, r[key]
             r["rank"] = rank
         out[board] = rows
-    return {"boards": out, "matches": counted, "finished": finished}
+    return {"boards": out, "matches": counted, "finished": finished, "seven_two_min": SEVEN_TWO_MIN,
+            "bluffer_min_hands": BLUFFER_MIN_HANDS}
+
+
+def _ranked(rows: list, key: str) -> list:
+    rows.sort(key=lambda r: (not r["eligible"], -r[key], r["bot"]))
+    rank, prev = 0, None
+    for i, r in enumerate(rows):
+        if not r["eligible"]:
+            r["rank"] = None
+            continue
+        if r[key] != prev:
+            rank, prev = i + 1, r[key]
+        r["rank"] = rank
+    return rows
+
+
+def _bluffer_rows(totals: dict, best_bluffs: dict) -> list:
+    """Every bot: chips won by bluffs per 1,000 hands played, best first."""
+    rows = [{"bot": bot, "hands": t["hands"], "bluffs": t["bluffs"], "won": t["bluff_won"],
+             "per_1000": round(1000 * t["bluff_won"] / t["hands"], 1),
+             "eligible": t["hands"] >= BLUFFER_MIN_HANDS, "best": best_bluffs.get(bot)}
+            for bot, t in totals.items() if t["hands"]]
+    return _ranked(rows, "per_1000")
+
+
+def _seven_two_rows(totals: dict, best_hands: dict) -> list:
+    """Every bot dealt seven-two: chips won per seven-two dealt, best first.
+    Bots short of SEVEN_TWO_MIN hands are listed after the ranked ones, unranked."""
+    rows = []
+    for bot, t in totals.items():
+        if not t["seven_two_dealt"]:
+            continue
+        rows.append({"bot": bot, "dealt": t["seven_two_dealt"], "wins": t["seven_two_wins"],
+                     "won": t["seven_two_won"], "per_dealt": round(t["seven_two_won"] / t["seven_two_dealt"], 1),
+                     "eligible": t["seven_two_dealt"] >= SEVEN_TWO_MIN, "best": best_hands.get(bot)})
+    return _ranked(rows, "per_dealt")

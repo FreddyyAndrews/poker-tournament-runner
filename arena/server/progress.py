@@ -321,6 +321,8 @@ def qualifier_progress(run_dir: Path, cfg, run_id: str, active: bool = False) ->
             "running_cycle_done": counts.get(info.get("running_cycle"), 0) if active else None,
             "cycle_seconds": info.get("cycle_seconds", []), "time_budget_min": budget,
             "elapsed_s": round(elapsed) if elapsed is not None else None,
+            # for a smooth countdown: when it started and what this server's clock says now
+            "started_at": started if active else None, "server_now": _time.time(),
             "standings": qualifier.standings(cfg, final) if final else [],
             "provisional": qualifier.standings(cfg, records) if records else [],
             "qualifiers": qualifier.QUALIFIERS, "playing": playing, "profiles": profiles,

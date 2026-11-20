@@ -1,7 +1,7 @@
 // Format-specific run dashboards: bracket tree, round-robin grid, multi-table
 // overview, series results. Each takes the server's `progress` object.
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ord } from './PokerTable'
 import { PROFILE_COLUMNS, showStat } from '../replay/profile'
 
@@ -228,12 +228,14 @@ export function QualifierPanel({ p, active }: { p: any; active: boolean }) {
     const t = window.setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(t)
   }, [active])
-  // p.elapsed_s is the server's count when this update was fetched; between
-  // updates, add only the time since that fetch
-  const [fetchedAt, setFetchedAt] = useState(Date.now())
-  useEffect(() => setFetchedAt(Date.now()), [p.elapsed_s])
+  // Count from the run's start time, not from each update's rounded "elapsed",
+  // which made the clock jump when updates arrived. The offset between this
+  // browser's clock and the server's is measured once and kept.
+  const offset = useRef<number | null>(null)
+  if (offset.current === null && typeof p.server_now === 'number') offset.current = p.server_now - Date.now() / 1000
   const budget = (p.time_budget_min ?? 0) * 60
-  const elapsed = p.elapsed_s != null ? p.elapsed_s + Math.max(0, now - fetchedAt) / 1000 : null
+  const elapsed = typeof p.started_at === 'number' && offset.current !== null
+    ? Math.max(0, now / 1000 + offset.current - p.started_at) : null
   const times: number[] = p.cycle_seconds ?? []
   const typical = times.length ? times.reduce((a, b) => a + b, 0) / times.length : null
   const done = p.cycles_complete?.length ?? 0
@@ -305,9 +307,9 @@ export function ProfilesTable({ profiles, order }: { profiles: any; order: strin
 // Side prizes (arena/sideprizes.py): one board per measured prize, every bot's
 // best entry, best first, with a link that opens the match at that hand.
 const SIDE_BOARDS: { key: string; title: string; blurb: string }[] = [
+  { key: 'bluffer', title: 'Biggest bluffer', blurb: 'Chips won by bluffs per 1,000 hands played. A bluff: a bet or raise after the flop with under 40% equity against a random hand that gets a fold.' },
   { key: 'lowest_showdown', title: 'Lowest winning showdown', blurb: 'The weakest hand to win a pot at showdown, with a bet on the river.' },
-  { key: 'seven_two', title: 'Most won off a 7-2', blurb: 'Most chips won on one hand holding a seven and a two.' },
-  { key: 'single_hand', title: 'Most won off a single hand', blurb: 'Most chips taken from an opponent in one hand.' },
+  { key: 'seven_two', title: 'Most won off 7-2', blurb: 'Chips won on winning seven-two hands, per seven-two hand dealt. Losses with it don\u2019t count against a bot.' },
   { key: 'comeback', title: 'Biggest comeback', blurb: 'The smallest share of the chips a bot fell to in a match it went on to win.' },
 ]
 const SUIT: Record<string, string> = { s: '\u2660', h: '\u2665', d: '\u2666', c: '\u2663' }
@@ -329,6 +331,58 @@ export function SidePrizes({ prizes }: { prizes: any }) {
         const rows: any[] = boards[b.key] ?? []
         const shown = open[b.key] ? rows : rows.slice(0, 5)
         const comeback = b.key === 'comeback'
+        if (b.key === 'bluffer') return (
+          <div key={b.key} className="side-board" data-testid="board-bluffer">
+            <h3>{b.title}</h3>
+            <p className="hint" style={{ marginTop: 0 }}>{b.blurb} Ranked after {n(prizes.bluffer_min_hands ?? 500)} hands.</p>
+            {rows.length === 0 ? <p className="muted">Nobody yet.</p> : (
+              <table className="list num">
+                <thead><tr><th>#</th><th>Bot</th><th className="r" title="Chips won by bluffs, per 1,000 hands played">Per 1,000 hands</th>
+                  <th className="r">Bluffs</th><th className="r">Total won</th><th>Biggest bluff</th><th /></tr></thead>
+                <tbody>
+                  {shown.map(r => (
+                    <tr key={r.bot} className={r.rank === 1 ? 'qualified' : ''}>
+                      <td>{r.rank ?? <span className="muted" title="Not enough hands yet">-</span>}</td><td>{r.bot}</td>
+                      <td className="r">{n(Math.round(r.per_1000))}</td><td className="r">{n(r.bluffs)}</td><td className="r">+{n(r.won)}</td>
+                      <td>{r.best ? <>+{n(r.best.amount)} with <Cards cards={r.best.cards} /> <span className="muted">{r.best.made}, {Math.round((r.best.equity ?? 0) * 100)}% equity; {r.best.opponent} folded</span> <Cards cards={r.best.opponent_cards} /> <span className="muted">{r.best.opponent_made}</span></>
+                        : <span className="muted">-</span>}</td>
+                      <td className="r">{r.best && <a href={`#/match/${r.best.key}?hand=${r.best.hand + 1}`} title={`Open ${r.best.match_id} at hand ${r.best.hand + 1}`}>
+                        <button className="primary small">Watch</button></a>}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+            {rows.length > 5 && <button className="ghost small" onClick={() => setOpen(o => ({ ...o, [b.key]: !o[b.key] }))}>
+              {open[b.key] ? 'Show the top 5' : `Show all ${rows.length}`}</button>}
+          </div>
+        )
+        if (b.key === 'seven_two') return (
+          <div key={b.key} className="side-board" data-testid="board-seven_two">
+            <h3>{b.title}</h3>
+            <p className="hint" style={{ marginTop: 0 }}>{b.blurb} Ranked after {prizes.seven_two_min ?? 30} seven-two hands.</p>
+            {rows.length === 0 ? <p className="muted">Nobody yet.</p> : (
+              <table className="list num">
+                <thead><tr><th>#</th><th>Bot</th><th className="r" title="Chips won on winning 7-2 hands, divided by 7-2 hands dealt">Per 7-2 dealt</th>
+                  <th className="r">Dealt</th><th className="r">Won with it</th><th className="r">Total won</th><th>Best hand</th><th /></tr></thead>
+                <tbody>
+                  {shown.map(r => (
+                    <tr key={r.bot} className={r.rank === 1 ? 'qualified' : ''}>
+                      <td>{r.rank ?? <span className="muted" title="Not enough seven-two hands yet">-</span>}</td><td>{r.bot}</td>
+                      <td className="r">{r.per_dealt.toFixed(0)}</td><td className="r">{n(r.dealt)}</td>
+                      <td className="r">{n(r.wins)}</td><td className="r">+{n(r.won)}</td>
+                      <td>{r.best ? <><Cards cards={r.best.cards} /> <span className="muted">vs {r.best.opponent}</span> <Cards cards={r.best.opponent_cards} /> +{n(r.best.amount)}</> : <span className="muted">-</span>}</td>
+                      <td className="r">{r.best && <a href={`#/match/${r.best.key}?hand=${r.best.hand + 1}`} title={`Open ${r.best.match_id} at hand ${r.best.hand + 1}`}>
+                        <button className="primary small">Watch</button></a>}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+            {rows.length > 5 && <button className="ghost small" onClick={() => setOpen(o => ({ ...o, [b.key]: !o[b.key] }))}>
+              {open[b.key] ? 'Show the top 5' : `Show all ${rows.length}`}</button>}
+          </div>
+        )
         return (
           <div key={b.key} className="side-board" data-testid={`board-${b.key}`}>
             <h3>{b.title}</h3>
