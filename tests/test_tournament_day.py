@@ -311,6 +311,20 @@ def test_side_prize_boards_from_a_qualifier(tmp_path):
         assert any(e["type"] == "showdown" for e in evs)
         assert any(e["type"] == "decision" and e["street"] == "river" and e["applied"]["action"] in ("raise", "all_in")
                    for e in evs)
+    from arena.sideprizes import describe
+    assert describe(["8h", "Kh"], ["Qh", "6c", "4d", "2h", "7d"]) == "King high (K Q 8 7 6)"
+    assert describe(["7c", "Qh"], ["As", "3s", "4h", "Td", "9s"]) == "Ace high (A Q 10 9 7)"
+    assert describe(["9c", "Qh"], ["As", "9s", "4h", "Td", "2s"]) == "Pair of nines (9 9 A Q 10)"
+    assert describe(["9c", "6h"], ["6s", "9s", "4h", "Td", "2s"]) == "Two pair, nines and sixes (9 9 6 6 10)"
+    assert describe(["9c", "9h"], ["6s", "9s", "4h", "Td", "2s"]) == "Three nines (9 9 9 10 6)"
+    assert describe(["Ac", "5h"], ["2s", "3s", "4h", "Td", "Ks"]) == "Straight, five high"
+    assert describe(["Ac", "5c"], ["2c", "9c", "4h", "Tc", "Ks"]) == "Flush, ace high"
+    assert describe(["Kc", "Kh"], ["7s", "7d", "Kd", "Td", "2s"]) == "Full house, kings over sevens"
+    assert describe(["6c", "6h"], ["6s", "6d", "Kd", "Td", "2s"]) == "Four sixes (6 6 6 6 K)"
+    assert describe(["Ah", "Kh"], ["Qh", "Jh", "Th", "Td", "2s"]) == "Royal Flush"
+    for r in boards["lowest_showdown"]:
+        assert r["made"] == describe(r["cards"], r["board"])
+        assert r["opponent_made"] == describe(r["opponent_cards"], r["board"])
     scores = [r["score"] for r in boards["lowest_showdown"]]
     assert scores == sorted(scores)                                  # weakest winning hand first
     for r in boards["comeback"]:                                     # only match winners, at their low point

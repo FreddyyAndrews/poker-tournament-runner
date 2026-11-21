@@ -47,7 +47,7 @@ from arena.annotate import BLUFF_EQUITY, equity_vs_random
 from arena.events import SUMMARY_FILE, read_events
 
 PRIZES_FILE = "prizes.json"
-VERSION = 6
+VERSION = 7
 SHOWDOWNS_KEPT = 10            # best showdowns kept per match
 SHOWDOWNS_SHOWN = 30           # and listed for a run
 LOWEST_SHOWDOWN_MIN = 1000     # chips the winner must take for a showdown to count
@@ -74,6 +74,44 @@ _ROYAL = eval7.evaluate([eval7.Card(c) for c in ("As", "Ks", "Qs", "Js", "Ts")])
 
 def hand_name(score: int) -> str:
     return "Royal Flush" if score == _ROYAL else str(eval7.handtype(score))
+
+
+_ORDER = "23456789TJQKA"
+_ONE = dict(zip(_ORDER, ("two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
+                         "jack", "queen", "king", "ace")))
+_MANY = {**{r: w + "s" for r, w in _ONE.items()}, "6": "sixes"}
+
+
+def describe(hole, board) -> str:
+    """A hand in words that show how it ranks, from two hole cards and a full
+    board: "King high (K Q 8 7 6)", "Pair of nines (9 9 A J 4)", "Full house,
+    kings over sevens". The five cards are given where kickers can decide."""
+    import itertools
+    cards = [eval7.Card(c) for c in list(hole) + list(board)]
+    score, five = max(((eval7.evaluate(list(c)), c) for c in itertools.combinations(cards, 5)), key=lambda x: x[0])
+    ranks = [str(c)[0] for c in five]
+    count = {r: ranks.count(r) for r in ranks}
+    ranks.sort(key=lambda r: (-count[r], -_ORDER.index(r)))          # the made part first, then kickers
+    kind = hand_name(score)
+    shown = " (" + " ".join("10" if r == "T" else r for r in ranks) + ")"
+    top = ranks[0]
+    if kind in ("Straight", "Straight Flush") and set(ranks) == set("A2345"):
+        top = "5"                                                    # the wheel is five high
+    if kind == "High Card":
+        return f"{_ONE[top].capitalize()} high{shown}"
+    if kind == "Pair":
+        return f"Pair of {_MANY[top]}{shown}"
+    if kind == "Two Pair":
+        return f"Two pair, {_MANY[top]} and {_MANY[ranks[2]]}{shown}"
+    if kind == "Trips":
+        return f"Three {_MANY[top]}{shown}"
+    if kind == "Full House":
+        return f"Full house, {_MANY[top]} over {_MANY[ranks[3]]}"
+    if kind == "Quads":
+        return f"Four {_MANY[top]}{shown}"
+    if kind == "Royal Flush":
+        return kind
+    return f"{kind.capitalize()}, {_ONE[top]} high"                  # straight, flush, straight flush
 
 
 def _showdown_key(e: dict):
@@ -202,10 +240,13 @@ def match_entries(events) -> dict:
                         and deltas[bot] >= LOWEST_SHOWDOWN_MIN:
                     try:
                         score = eval7.evaluate([eval7.Card(c) for c in entry["cards"] + board_cards])
+                        named = {"made": describe(entry["cards"], board_cards)}
+                        if entry.get("opponent_cards"):
+                            named["opponent_made"] = describe(entry["opponent_cards"], board_cards)
                     except Exception:
                         score = None
                     if score is not None:
-                        offer("lowest_showdown", bot, {**entry, "score": score})
+                        offer("lowest_showdown", bot, {**entry, **named, "score": score})
             hand = None
     if winner and winner in low:
         share, n, chips, total = low[winner]
