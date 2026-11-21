@@ -20,6 +20,13 @@
   comeback          in a match the bot won, the smallest share of the chips it
                     fell to on the way
 
+Beside the prizes, for the commentator (no prize attached):
+
+  showdowns         the best hands shown down in the run: every showdown on a
+                    full board is listed under its best hand, strongest first
+                    (a royal flush is named as one). Equal hands are ordered
+                    by the hand they beat, then by the chips won.
+
 Each board ranks the bots by their best entry. Every entry names the match
 and hand, both players' cards (the logs hold every hole card, shown or not),
 the board and the chips won, so the page can link straight to the hand.
@@ -40,7 +47,9 @@ from arena.annotate import BLUFF_EQUITY, equity_vs_random
 from arena.events import SUMMARY_FILE, read_events
 
 PRIZES_FILE = "prizes.json"
-VERSION = 5
+VERSION = 6
+SHOWDOWNS_KEPT = 10            # best showdowns kept per match
+SHOWDOWNS_SHOWN = 30           # and listed for a run
 LOWEST_SHOWDOWN_MIN = 1000     # chips the winner must take for a showdown to count
 BLUFFER_MIN_HANDS = 500        # hands played before a bot is ranked as a bluffer
 SEVEN_TWO_MIN = 30            # seven-two hands dealt before a bot is ranked
@@ -58,6 +67,36 @@ def better(board: str, a: dict, b: dict) -> bool:
 
 def _is_seven_two(cards) -> bool:
     return sorted(c[0] for c in cards) == ["2", "7"]
+
+
+_ROYAL = eval7.evaluate([eval7.Card(c) for c in ("As", "Ks", "Qs", "Js", "Ts")])
+
+
+def hand_name(score: int) -> str:
+    return "Royal Flush" if score == _ROYAL else str(eval7.handtype(score))
+
+
+def _showdown_key(e: dict):
+    """Sorts showdown entries best first."""
+    return (-e["score"], -(e.get("opponent_score") or 0), -e["amount"])
+
+
+def _showdown_entry(n, hole, board_cards, deltas, blinds):
+    """One showdown as an entry under its best hand; None if it can't be scored."""
+    try:
+        cards = [eval7.Card(c) for c in board_cards]
+        scores = {bot: eval7.evaluate([eval7.Card(c) for c in hc] + cards) for bot, hc in hole.items()
+                  if hc and len(hc) == 2 and bot in deltas}
+    except Exception:
+        return None
+    if len(scores) < 2:
+        return None
+    bot = max(scores, key=lambda b: (scores[b], deltas.get(b, 0)))
+    opp = max((b for b in scores if b != bot), key=lambda b: scores[b])
+    return {"hand": n, "bot": bot, "cards": hole[bot], "made": hand_name(scores[bot]), "score": scores[bot],
+            "opponent": opp, "opponent_cards": hole[opp], "opponent_made": hand_name(scores[opp]),
+            "opponent_score": scores[opp], "board": list(board_cards), "amount": deltas.get(bot, 0),
+            "split": scores[bot] == scores[opp], "big_blind": blinds.get("bb")}
 
 
 COUNTS = ("hands", "bluffs", "bluff_won", "seven_two_dealt", "seven_two_wins", "seven_two_won")
@@ -89,6 +128,7 @@ def match_entries(events) -> dict:
     {bot: {"seven_two_dealt", "seven_two_wins", "seven_two_won"}}."""
     best = {b: {} for b in BOARDS}
     counts = {}
+    showdowns = []
 
     def offer(board, bot, entry):
         cur = best[board].get(bot)
@@ -142,6 +182,10 @@ def match_entries(events) -> dict:
                     if d > 0:
                         k["seven_two_wins"] += 1
                         k["seven_two_won"] += d
+            if hand["showdown"] is not None and len(board_cards) == 5:
+                shown = _showdown_entry(hand["n"], hand["hole"], board_cards, deltas, hand["blinds"])
+                if shown:
+                    showdowns.append(shown)
             winners = [b for b, d in deltas.items() if d > 0]
             for bot in winners:
                 opp = next((o for o in deltas if o != bot), None)
@@ -168,6 +212,7 @@ def match_entries(events) -> dict:
         best["comeback"][winner] = {"hand": n, "share": round(share, 4), "chips": chips, "total": total,
                                     "opponent": next((b for b in low if b != winner), None)}
     best["counts"] = counts
+    best["showdowns"] = sorted(showdowns, key=_showdown_key)[:SHOWDOWNS_KEPT]
     return best
 
 
@@ -229,6 +274,7 @@ def run_boards(match_dirs, run_id: str = None, wait: bool = False) -> dict:
     and "key"]}, "matches": counted, "finished": finished}."""
     best = {b: {} for b in BOARDS}
     totals = {}
+    showdowns = []
     counted = finished = 0
     for d in sorted(Path(x) for x in match_dirs):
         if not (d / SUMMARY_FILE).is_file():
@@ -245,6 +291,8 @@ def run_boards(match_dirs, run_id: str = None, wait: bool = False) -> dict:
             t = totals.setdefault(bot, dict.fromkeys(COUNTS, 0))
             for name in t:
                 t[name] += k.get(name, 0)
+        for entry in boards.get("showdowns") or []:
+            showdowns.append({**entry, "match_id": d.name, "key": f"{run_id}/matches/{d.name}" if run_id else d.name})
         for board in BOARDS:
             for bot, entry in (boards.get(board) or {}).items():
                 cur = best[board].get(bot)
@@ -267,7 +315,11 @@ def run_boards(match_dirs, run_id: str = None, wait: bool = False) -> dict:
                 rank, prev = i + 1, r[key]
             r["rank"] = rank
         out[board] = rows
-    return {"boards": out, "matches": counted, "finished": finished, "seven_two_min": SEVEN_TWO_MIN,
+    showdowns.sort(key=lambda e: (*_showdown_key(e), e["match_id"], e["hand"]))
+    showdowns = showdowns[:SHOWDOWNS_SHOWN]
+    for i, e in enumerate(showdowns):
+        e["rank"] = i + 1
+    return {"boards": out, "showdowns": showdowns, "matches": counted, "finished": finished, "seven_two_min": SEVEN_TWO_MIN,
             "bluffer_min_hands": BLUFFER_MIN_HANDS, "lowest_showdown_min": LOWEST_SHOWDOWN_MIN}
 
 

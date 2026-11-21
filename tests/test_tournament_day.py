@@ -318,4 +318,29 @@ def test_side_prize_boards_from_a_qualifier(tmp_path):
         assert next(x["bot"] for x in ev[-1]["results"] if x["place"] == 1) == r["bot"]
         lows = [e["stacks"][r["bot"]] for e in ev if e["type"] == "hand_end"]
         assert r["chips"] == min(lows)
+    # best showdowns: strongest first, each the best hand of a real showdown on a full board
+    import eval7
+    from arena.sideprizes import hand_name
+    shown = out["showdowns"]
+    assert shown and [r["rank"] for r in shown] == list(range(1, len(shown) + 1))
+    assert [r["score"] for r in shown] == sorted((r["score"] for r in shown), reverse=True)
+    every = []
+    for d in mroot.iterdir():
+        for e in read_events(d):
+            if e["type"] == "hand_start":
+                hole, sd = e["hole"], False
+            elif e["type"] == "showdown":
+                sd = True
+            elif e["type"] == "hand_end" and sd and len(e["board"]) == 5:
+                every.append(max(eval7.evaluate([eval7.Card(c) for c in hole[b] + e["board"]]) for b in hole))
+    assert shown[0]["score"] == max(every)
+    for r in shown:
+        assert len(r["board"]) == 5 and any(e["type"] == "showdown" for e in hand_events(r))
+        mine = eval7.evaluate([eval7.Card(c) for c in r["cards"] + r["board"]])
+        theirs = eval7.evaluate([eval7.Card(c) for c in r["opponent_cards"] + r["board"]])
+        assert mine == r["score"] >= theirs == r["opponent_score"] and r["made"] == hand_name(mine)
+        assert r["split"] == (mine == theirs)
+    royal = eval7.evaluate([eval7.Card(c) for c in ("Ah", "Kh", "2c", "Qh", "Jh", "Th", "9h")])
+    assert hand_name(royal) == "Royal Flush"
+    assert hand_name(eval7.evaluate([eval7.Card(c) for c in ("9h", "Kh", "2c", "Qh", "Jh", "Th", "3d")])) == "Straight Flush"
     assert qualifier_progress(tmp_path / "q", cfg, "q")["side_prizes"]["boards"].keys() == boards.keys()

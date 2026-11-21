@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api } from '../api'
-import { BracketView, MttView, ProfilesTable, QualifierPanel, SidePrizes, RoundRobinView, SeriesChart } from '../components/dashboards'
+import { BracketView, MttView, BestShowdowns, ProfilesTable, QualifierPanel, SidePrizes, RoundRobinView, SeriesChart } from '../components/dashboards'
 import { ord } from '../components/PokerTable'
 import { StatusPill } from './Home'
 
@@ -207,6 +207,13 @@ export function RunView({ runId }: { runId: string }) {
         <section className="section">
           <h2>Side prizes</h2>
           <SidePrizes prizes={p.side_prizes} />
+        </section>
+      )}
+
+      {format === 'qualifier' && (p?.side_prizes?.showdowns?.length ?? 0) > 0 && (
+        <section className="section">
+          <h2>Best showdowns</h2>
+          <BestShowdowns prizes={p.side_prizes} />
         </section>
       )}
 

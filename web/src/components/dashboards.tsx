@@ -422,3 +422,39 @@ export function SidePrizes({ prizes }: { prizes: any }) {
     </div>
   )
 }
+
+// Best showdowns (arena/sideprizes.py): the strongest hands shown down in the
+// run, for the commentator. Not a prize.
+export function BestShowdowns({ prizes }: { prizes: any }) {
+  const [open, setOpen] = useState(false)
+  const rows: any[] = prizes?.showdowns ?? []
+  if (!rows.length) return null
+  const n = (x: number) => (x ?? 0).toLocaleString('en-US')
+  const shown = open ? rows : rows.slice(0, 10)
+  return (
+    <div className="side-prizes" data-testid="best-showdowns">
+      <div className="side-board">
+        <p className="hint" style={{ marginTop: 0 }}>The strongest hands shown down so far, best first. Equal hands are ordered by the hand they beat. Not a prize.</p>
+        <table className="list num">
+          <thead><tr><th>#</th><th>Hand</th><th>Bot</th><th>Against</th><th>Board</th><th className="r">Won</th><th /></tr></thead>
+          <tbody>
+            {shown.map(r => (
+              <tr key={`${r.key}/${r.hand}`}>
+                <td>{r.rank}</td>
+                <td><strong>{r.made}</strong></td>
+                <td>{r.bot} <Cards cards={r.cards} /></td>
+                <td>{r.opponent} <Cards cards={r.opponent_cards} /> <span className="muted">{r.opponent_made}</span></td>
+                <td><Cards cards={r.board} /></td>
+                <td className="r">{r.split ? <span className="muted">split</span> : `+${n(r.amount)}`}</td>
+                <td className="r"><a href={`#/match/${r.key}?hand=${r.hand + 1}`} title={`Open ${r.match_id} at hand ${r.hand + 1}`}>
+                  <button className="primary small">Watch</button></a></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {rows.length > 10 && <button className="ghost small" onClick={() => setOpen(o => !o)}>
+          {open ? 'Show the top 10' : `Show the top ${rows.length}`}</button>}
+      </div>
+    </div>
+  )
+}
