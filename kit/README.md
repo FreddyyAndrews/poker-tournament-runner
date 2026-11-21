@@ -304,9 +304,12 @@ submission.
    holds exactly one bot; with several and none named after your team, it is
    rejected, because we won't guess which one you meant.
 3. **Check it:** `make validate BOT=my_bots/<team_name>`.
-4. **Push before the deadline**, make sure the repo is public (or that the
-   organisers have access), and submit its link in the form shown at the event.
-   Your repo is collected exactly at the deadline; anything pushed later doesn't count.
+4. **Fill in the [submission form](https://docs.google.com/forms/d/e/1FAIpQLScV6yLoWM0q7Lk-zqzqdfnfFYoZOYSK2VqGXTcsKB445uebsQ/viewform)**
+   with your team name and the link to your repo. You can do this as soon as
+   your repo exists, and keep pushing afterwards.
+5. **Push before the deadline, and make sure the repo is public by then.** Your
+   repo is collected exactly at the deadline: whatever is on its main branch at
+   that moment is your entry, and anything pushed later doesn't count.
 
 Right after the deadline every bot is checked: the validator, a short match in
 the sandbox, and a review of the code against the rules. A bot that fails to
