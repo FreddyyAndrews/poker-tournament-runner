@@ -165,7 +165,12 @@ class BotProcess:
     def _start(self):
         container_bot_py = "/bot/bot.py"
         extra_env = {"ACTION_TIMEOUT": str(ACTION_TIMEOUT),
-                     "WARMUP_TIMEOUT": str(WARMUP_TIMEOUT)}
+                     "WARMUP_TIMEOUT": str(WARMUP_TIMEOUT),
+                     # One maths thread. A container sees every CPU of the host
+                     # but may use half of one, so numpy's BLAS would start a
+                     # thread per CPU and they would spend the bot's CPU share
+                     # waiting on each other: a 0.2 s warmup took over 30 s.
+                     "OPENBLAS_NUM_THREADS": "1", "OMP_NUM_THREADS": "1", "MKL_NUM_THREADS": "1"}
         if self.seed is not None:
             extra_env["BOT_SEED"] = str(self.seed)
 
