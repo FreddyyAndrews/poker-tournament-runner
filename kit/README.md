@@ -52,16 +52,38 @@ current `blinds`.
 
 ## Getting started
 
-You need Python 3.10 (one of the libraries, eval7, doesn't build on 3.11+).
-Your computer probably has a newer Python; the quickest way to get 3.10 is
-[uv](https://docs.astral.sh/uv/):
+**1. Make your own copy.** On this repo's GitHub page click **Use this
+template** → **Create a new repository** (private is fine while you work), then
+clone *your* repo, not this one, so you can push your bot later:
 
 ```bash
-uv python install 3.10
-uv venv --seed -p 3.10 .venv && source .venv/bin/activate     # do this in the kit folder
+git clone https://github.com/<you>/<your-repo>.git
+cd <your-repo>
 ```
 
-Then, with the environment active:
+**2. Get Python 3.10.** One of the libraries (eval7) doesn't build on 3.11 or
+newer, and your computer probably has a newer Python. The quickest way to get
+3.10 without touching your system Python is [uv](https://docs.astral.sh/uv/):
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh    # installs uv (skip if you have it); then open a new terminal
+uv python install 3.10
+uv venv --seed -p 3.10 .venv && source .venv/bin/activate     # run this in your repo folder
+```
+
+Run `source .venv/bin/activate` again whenever you open a new terminal.
+
+- **Windows:** use [WSL](https://learn.microsoft.com/windows/wsl/install)
+  (`wsl --install` in PowerShell, then work inside the Ubuntu terminal and run
+  `sudo apt update && sudo apt install -y build-essential git make` once). The
+  kit's commands assume a Mac or Linux shell.
+- **Mac:** if `make install` stops with a compiler error, run
+  `xcode-select --install` once and try again.
+- **Stuck?** Ask an organiser early rather than losing an hour to setup.
+
+**3. Install, and play your first match.**
+
+With the environment active:
 
 ```bash
 make install                                   # eval7, numpy, scipy, treys, scikit-learn
@@ -227,9 +249,8 @@ submission.
 
 ## Submitting your bot
 
-1. **Make your own repo.** On the kit's GitHub page, click **Use this template**,
-   then clone your new repo and work there. (Keep it private while you work if
-   you like.)
+1. **Work in your own repo**, made with **Use this template** (step 1 of
+   Getting started).
 2. **Keep your entry in `my_bots/<team_name>/`**: `bot.py`, plus `data/` if you
    use one, with the same team name you put on the submission form (lowercase
    letters, digits and underscores). Only that folder is collected; changes
