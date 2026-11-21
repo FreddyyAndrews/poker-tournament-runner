@@ -14,8 +14,10 @@ For each team, intake:
   1. clones the repo now (this is the freeze: later pushes don't count) and
      records the commit and the time;
   2. finds the bot: my_bots/<team>/bot.py, or the only bot under my_bots/;
-  3. copies just that folder (bot.py and data/) to entries/<team>/; nothing
-     else from their repo, so changes to their copy of the kit don't matter;
+  3. copies just that folder to entries/<team>/: bot.py, data/, and any Python
+     modules or packages of the bot's own next to bot.py (the validator and
+     the sandbox both allow those). Nothing else from their repo is taken, so
+     changes to their copy of the kit don't matter;
   4. runs the validator's static checks (without importing the bot);
   5. plays a short smoke match against bots/template in the Docker sandbox,
      which proves the bot loads and plays under the real limits.
@@ -100,9 +102,16 @@ def _find_bot(repo: Path, team: str) -> Path:
 def _copy_bot(src: Path, dest: Path):
     shutil.rmtree(dest, ignore_errors=True)
     dest.mkdir(parents=True)
+    skip = shutil.ignore_patterns("__pycache__", "*.pyc")
     shutil.copy2(src / "bot.py", dest / "bot.py")
     if (src / "data").is_dir():
-        shutil.copytree(src / "data", dest / "data", ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+        shutil.copytree(src / "data", dest / "data", ignore=skip)
+    # The bot's own code beside bot.py: modules (x.py) and packages (x/__init__.py).
+    for p in sorted(src.iterdir()):
+        if p.is_file() and p.suffix == ".py" and p.name != "bot.py":
+            shutil.copy2(p, dest / p.name)
+        elif p.is_dir() and p.name != "data" and (p / "__init__.py").is_file():
+            shutil.copytree(p, dest / p.name, ignore=skip)
 
 
 def _smoke(team: str, path: Path, use_docker: bool) -> dict:
