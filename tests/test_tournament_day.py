@@ -160,8 +160,19 @@ def test_spectators_see_the_equity_behind_postflop_bets_and_players_dont(tmp_pat
     assert bets and all(0 <= e["equity"] <= 1 for e in bets)
     others = [e for e in seen if e["type"] == "decision" and e not in bets]
     assert all("equity" not in e for e in others)
+    # the hand held, on those bets and on postflop folds (the timeline's bluff markers)
+    import eval7
+    folds = [e for e in seen if e["type"] == "decision" and e["street"] != "preflop"
+             and e["applied"]["action"] == "fold"]
+    assert folds
+    for e in bets + folds:
+        cards = [eval7.Card(c) for c in e["state"]["your_cards"] + e["state"]["community_cards"]]
+        assert e["held"]["strength"] == eval7.evaluate(cards)
+        assert e["held"]["made"] == str(eval7.handtype(e["held"]["strength"])) and 0 <= e["held"]["equity"] <= 1
+    assert all(e["held"]["equity"] == e["equity"] for e in bets)
+    assert all("held" not in e for e in seen if e not in bets and e not in folds)
     as_player = client.get("/api/matches/m/events?as=template").json()["events"]
-    assert all("equity" not in e for e in as_player)
+    assert all("equity" not in e and "held" not in e for e in as_player)
 
 
 def test_player_profiles_describe_how_each_bot_plays(tmp_path):

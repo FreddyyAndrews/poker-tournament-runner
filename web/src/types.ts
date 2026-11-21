@@ -118,6 +118,8 @@ export type Decision = Base & {
   debug: unknown
   // added for spectators on postflop bets and raises: equity against a random hand (arena/annotate.py)
   equity?: number
+  // added for spectators on those bets and on postflop folds: the hand held at that moment
+  held?: { made: string; strength: number; equity: number }
   debug_error: string | null
   error: string | null
   error_detail: string | null

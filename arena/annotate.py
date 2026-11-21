@@ -3,8 +3,14 @@ wants that the log doesn't state outright.
 
   equity   on a bet, raise or all-in after the flop: the bettor's equity
            against a random hand, P(win) + P(tie)/2, from what the bettor knew
-           at that moment (its two cards and the board). The timeline marks a
-           hand as a bluff when this is below BLUFF_EQUITY.
+           at that moment (its two cards and the board). The player profiles
+           count a bet as a bluff when this is below BLUFF_EQUITY, and so does
+           the biggest-bluffer prize.
+  held     on those bets and on folds after the flop: the hand the bot held
+           at that moment: `made` (its name, e.g. "Pair"), `strength` (its
+           eval7 value; higher beats lower on the same board) and `equity`
+           (as above). The timeline marks a hand as a bluff when the hand
+           that folded was the better one by a margin (web MatchView).
 
 Annotations are added only when events are sent to spectators, never to the
 logs, and only to events that have already happened, so a live match or a
@@ -56,28 +62,34 @@ def equity_vs_random(cards: tuple, board: tuple) -> float:
 
 
 def annotate(event: dict) -> dict:
-    """The event, with `equity` added to postflop bets, raises and all-ins."""
+    """The event, with `equity` added to postflop bets, raises and all-ins, and
+    `held` (the hand the bot had at that moment) added to those and to folds."""
     if event.get("type") != "decision" or event.get("street") == "preflop":
         return event
     applied = event.get("applied") or {}
-    if applied.get("action") not in AGGRESSIVE:
+    action = applied.get("action")
+    if action not in AGGRESSIVE and action != "fold":
         return event
     state = event.get("state") or {}
     cards, board = state.get("your_cards"), state.get("community_cards")
     if not cards or len(cards) != 2 or not board or len(board) < 3:
         return event
     try:
-        eq = equity_vs_random(tuple(cards), tuple(board))
+        eq = round(equity_vs_random(tuple(cards), tuple(board)), 3)
+        strength = eval7.evaluate([eval7.Card(c) for c in list(cards) + list(board)])
+        held = {"made": str(eval7.handtype(strength)), "strength": strength, "equity": eq}
     except Exception:               # a malformed card in an old log: no annotation
         return event
-    return {**event, "equity": round(eq, 3)}
+    if action == "fold":
+        return {**event, "held": held}
+    return {**event, "equity": eq, "held": held}
 
 
 def annotate_line(line: str) -> str:
     """A raw log line, annotated if it is a decision that may need it (cheap
     check first: most lines are passed through without parsing)."""
     import json
-    if '"decision"' not in line or ('"raise"' not in line and '"all_in"' not in line):
+    if '"decision"' not in line or ('"raise"' not in line and '"all_in"' not in line and '"fold"' not in line):
         return line
     event = json.loads(line)
     out = annotate(event)
