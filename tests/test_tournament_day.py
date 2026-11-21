@@ -239,6 +239,30 @@ def test_a_stopped_qualifier_still_shows_standings_for_its_complete_cycles(tmp_p
     assert len(p["standings"]) == 3 and sum(r["points"] for r in p["standings"]) == 3   # cycle 1 only
 
 
+def test_standings_say_who_beats_whom():
+    from arena.formats.qualifier import standings
+
+    def rec(cycle, a, b, da):
+        one = {"hands_played": 10, "bb_per_100": 0, "timeouts": 0, "errors": 0}
+        return {"cycle": cycle, "players": [a, b], "leg": 1,
+                "results": [{"bot": a, "delta": da, **one}, {"bot": b, "delta": -da, **one}]}
+    # rock, paper, scissors over two cycles, and "low", which loses to everyone except one draw with rock
+    wins = [("paper", "rock"), ("scissors", "paper"), ("rock", "scissors"),
+            ("rock", "low"), ("paper", "low"), ("scissors", "low")]
+    records = [rec(c, w, l, 100) for c in (1, 2) for w, l in wins]
+    records[9] = rec(2, "rock", "low", 0)                       # cycle 2: rock and low draw
+    rows = standings(None, records)
+    by = {r["bot"]: r for r in rows}
+    assert [r["bot"] for r in rows][-1] == "low" and by["rock"]["place"] == 3
+    assert by["paper"]["versus"] == {"rock": [2, 0, 0], "scissors": [0, 0, 2], "low": [2, 0, 0]}
+    assert by["rock"]["versus"]["low"] == [1, 1, 0] and by["low"]["versus"]["rock"] == [0, 1, 1]
+    top = {r["bot"] for r in rows[:2]}                           # 4 bots: the first two
+    for r in rows:
+        assert [a + b for a, b in zip(r["vs_top"], r["vs_bottom"])] == [r["wins"], r["draws"], r["losses"]]
+        assert r["vs_top"] == [sum(v[i] for o, v in r["versus"].items() if o in top) for i in range(3)]
+    assert by["low"]["vs_top"] == [0, 0, 4] and by["low"]["vs_bottom"] == [0, 1, 1]
+
+
 def test_profile_street_statistics_on_scripted_hands():
     from arena.profiles import match_counts, profile
 

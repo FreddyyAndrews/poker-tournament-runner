@@ -477,6 +477,14 @@ tr.qualified td { background: color-mix(in srgb, var(--good) 10%, transparent); 
 .profiles th.sortable:hover { color: var(--text); }
 .profiles th.sorted { color: var(--text); }
 
+/* Head-to-head matrix */
+table.h2h { width: auto; }
+table.h2h td, table.h2h th { padding: 6px 8px; white-space: nowrap; }
+table.h2h .c { text-align: center; min-width: 52px; border-left: 1px solid var(--line); }
+table.h2h td.self { background: var(--surface); }
+table.h2h td.name { color: var(--text); }
+table.h2h th.on, table.h2h tr.on td.name { color: var(--text); font-weight: 600; }
+
 /* Match stats tab */
 .match-stats { padding: 12px 16px; overflow: auto; }
 .match-stats td.stat-name { color: var(--text-2); cursor: help; }

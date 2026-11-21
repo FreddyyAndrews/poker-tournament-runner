@@ -16,6 +16,10 @@ Bots level on points are separated by their head-to-head results against each
 other, then bb/100. Bots still level share a place; if that happens at the
 cut-off, more than `qualifiers` (4) bots show as qualified and the organizer
 settles it with a playoff.
+
+Each row also carries the bot's record against every opponent ("versus") and
+against the top and bottom halves of the standings, for the head-to-head
+matrix: the scores alone don't show who beats whom.
 """
 
 import json
@@ -140,4 +144,19 @@ def standings(cfg, records) -> list:
             place, prev = i + 1, key
         r["place"] = place
         r["qualified"] = place <= QUALIFIERS
+    # Who beats whom: each bot's record (wins, draws, losses, in pairings)
+    # against every opponent, and against the top and bottom halves of these
+    # standings (the top half is the first half of the list, rounded up; a
+    # bot's own half doesn't include itself).
+    versus = {r["bot"]: {} for r in rows}
+    for p in results:
+        a, b = p["players"]
+        for bot, opp in ((a, b), (b, a)):
+            i = 1 if p["winner"] is None else 0 if p["winner"] == bot else 2
+            versus.setdefault(bot, {}).setdefault(opp, [0, 0, 0])[i] += 1
+    top = {r["bot"] for r in rows[:(len(rows) + 1) // 2]}
+    for r in rows:
+        r["versus"] = versus[r["bot"]]
+        for key, half in (("vs_top", True), ("vs_bottom", False)):
+            r[key] = [sum(rec[i] for opp, rec in r["versus"].items() if (opp in top) == half) for i in range(3)]
     return rows

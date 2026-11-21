@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api } from '../api'
-import { BracketView, MttView, BestShowdowns, ProfilesTable, QualifierPanel, SidePrizes, RoundRobinView, SeriesChart } from '../components/dashboards'
+import { BracketView, MttView, BestShowdowns, HeadToHeadMatrix, ProfilesTable, QualifierPanel, SidePrizes, RoundRobinView, SeriesChart } from '../components/dashboards'
 import { ord } from '../components/PokerTable'
 import { StatusPill } from './Home'
 
@@ -177,6 +177,8 @@ export function RunView({ runId }: { runId: string }) {
           <table className="list num" data-testid="standings-table">
             <thead><tr><th>#</th><th>Bot</th>{rr && <th className="r">Points</th>}
               {(format === 'bracket' || rr) && <th className="r">{rr ? 'W-L-D' : 'W-L'}</th>}
+              {format === 'qualifier' && <th className="r" title="Record against the bots in the top half of these standings (wins-losses-draws, in pairings)">vs top half</th>}
+              {format === 'qualifier' && <th className="r" title="Record against the bots in the bottom half of these standings (wins-losses-draws, in pairings)">vs bottom half</th>}
               <th className="r">Chips won</th><th className="r">bb/100</th><th className="r">Hands</th>
               <th className="r">Timeouts</th><th className="r">Errors</th></tr></thead>
             <tbody>
@@ -186,6 +188,8 @@ export function RunView({ runId }: { runId: string }) {
                   {rr && <td className="r">{s.points}</td>}
                   {(format === 'bracket' || rr) &&
                     <td className="r">{s.wins}-{s.losses}{s.draws ? `-${s.draws}` : ''}</td>}
+                  {format === 'qualifier' && [s.vs_top, s.vs_bottom].map((v: number[] | undefined, i: number) => (
+                    <td key={i} className="r">{v ? `${v[0]}-${v[2]}${v[1] ? `-${v[1]}` : ''}` : <span className="muted">-</span>}</td>))}
                   <td className="r">{s.delta > 0 ? '+' : ''}{fmt(s.delta)}</td>
                   <td className="r">{(s.bb_per_100 ?? 0).toFixed(1)}</td><td className="r">{fmt(s.hands_played)}</td>
                   <td className="r">{s.timeouts ?? 0}</td><td className="r">{s.errors ?? 0}</td></tr>
@@ -194,6 +198,16 @@ export function RunView({ runId }: { runId: string }) {
           </table>
         </section>
       )}
+
+      {format === 'qualifier' && (() => {
+        const rows = d.standings ?? (p?.standings?.length ? p.standings : p?.provisional) ?? []
+        return rows.length > 1 && rows[0].versus ? (
+          <section className="section">
+            <h2>Head to head</h2>
+            <HeadToHeadMatrix rows={rows} />
+          </section>
+        ) : null
+      })()}
 
       {format === 'qualifier' && p?.profiles && Object.keys(p.profiles.bots ?? {}).length > 0 && (
         <section className="section">

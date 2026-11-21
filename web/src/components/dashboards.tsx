@@ -256,6 +256,52 @@ export function QualifierPanel({ p, active }: { p: any; active: boolean }) {
   )
 }
 
+// Head-to-head matrix: each bot's record against every other, in standings
+// order, from the standings rows' "versus" (arena/formats/qualifier.py). A row
+// reads across: green = that bot is ahead of the column's bot, red = behind.
+// Red above the diagonal is a bot losing to one placed below it.
+export function HeadToHeadMatrix({ rows }: { rows: any[] }) {
+  const [hover, setHover] = useState<{ r: number; c: number } | null>(null)
+  if (!rows?.length || !rows[0].versus) return null
+  const shade = (w: number, d: number, l: number) => {
+    const n = w + d + l
+    if (!n) return undefined
+    const x = (w + d / 2) / n                        // 1 = won every pairing, 0 = lost every one
+    const strength = Math.min(60, Math.round(Math.abs(x - 0.5) * 2 * 90))
+    return strength < 4 ? undefined : `color-mix(in srgb, var(${x > 0.5 ? '--good' : '--live'}) ${strength}%, transparent)`
+  }
+  return (
+    <div data-testid="h2h-matrix">
+      <div style={{ overflowX: 'auto' }}>
+        <table className="list num h2h">
+          <thead><tr><th>#</th><th>Bot</th>
+            {rows.map((c, j) => <th key={c.bot} className={'c' + (hover?.c === j ? ' on' : '')} title={c.bot}>{j + 1}</th>)}</tr></thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={r.bot} className={hover?.r === i ? 'on' : ''}>
+                <td>{i + 1}</td><td className="name">{r.bot}</td>
+                {rows.map((c, j) => {
+                  if (i === j) return <td key={c.bot} className="c self" />
+                  const [w, d, l] = r.versus[c.bot] ?? [0, 0, 0]
+                  return (
+                    <td key={c.bot} className="c" style={{ background: shade(w, d, l) }}
+                        onMouseEnter={() => setHover({ r: i, c: j })} onMouseLeave={() => setHover(null)}
+                        title={`${r.bot} against ${c.bot}: won ${w}, lost ${l}${d ? `, drew ${d}` : ''}`}>
+                      {w + d + l ? <>{w}-{l}{d > 0 && <span className="muted">-{d}</span>}</> : ''}</td>
+                  )
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="hint">Read across: each cell is the row bot&rsquo;s wins, losses and (greyed) draws against the column bot,
+        counted in pairings as the standings are; the numbers along the top are the standings places. Green = ahead, red = behind.
+        Red above the diagonal is a bot losing to one placed below it. Hover a cell for the names.</p>
+    </div>
+  )
+}
+
 // Player profiles (arena/profiles.py): how each bot plays, for commentary.
 export function ProfilesTable({ profiles, order }: { profiles: any; order: string[] }) {
   // Click a heading: high to low, again: low to high, again: back to standings order.
