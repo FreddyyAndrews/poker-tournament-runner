@@ -4,8 +4,8 @@
 
 You write a `decide()` function that picks a move from the game state; when
 coding ends, every bot plays in a live tournament. There's $750 in prizes, for
-the tournament winners and for the most creative strategies, so your bot
-doesn't have to win to be rewarded.
+the tournament winners and for six other things a bot can be best at, so your
+bot doesn't have to win to be rewarded (see [Prizes](#prizes)).
 
 Everything you need to build a No-Limit Texas Hold'em bot for the hackathon: the
 game engine, the table and blind logic, the bot sandbox, a validator, a bot
@@ -49,6 +49,48 @@ semifinals, then the final.
 
 Your bot doesn't need to remember this table: every decision includes the
 current `blinds`.
+
+## Prizes
+
+$750 in total. A team can win more than one.
+
+| Prize | Amount | How it's decided |
+|---|---|---|
+| Live championship, 1st | $150 | Winner of the final bracket |
+| Live championship, 2nd | $100 | Runner-up |
+| Live championship, 3rd and 4th | $75 each | The two losing semifinalists |
+| Best exploitative strategy | $75 | Judged: the bot that most successfully exploits other bots' strategies |
+| Best game-theoretic strategy | $75 | Judged: the strategy closest to optimal play without targeting opponents |
+| Biggest bluffer | $50 | Measured: chips won by bluffs, per 1,000 hands played |
+| Most won off 7-2 | $50 | Measured: chips won with seven-two, per seven-two hand dealt |
+| Biggest comeback | $50 | Measured: the smallest share of the chips a bot fell to in a match it went on to win |
+| Lowest winning showdown | $50 | Measured: the weakest hand to win at least 1,000 chips at showdown |
+
+**The judged prizes** are decided by the organisers from your bot's code, its
+results against different opponents, and your explanation of it at the final
+evaluation.
+
+**The measured prizes** are counted over every match of the qualification
+round, from the match logs, and shown on a live scoreboard:
+
+- **Biggest bluffer.** A bluff is a bet or raise after the flop made with under
+  40% equity against a random hand (worked out from your two cards and the
+  board at that moment) that makes your opponent fold. The score is the chips
+  you won on those hands, per 1,000 hands you played. A bot needs 500 hands to
+  be ranked.
+- **Most won off 7-2.** The chips you won on every hand you won holding a seven
+  and a two (suited or not, with or without a showdown), divided by the number
+  of times you were dealt seven-two. Hands you lose with it don't count against
+  you. A bot needs 30 seven-two hands to be ranked.
+- **Biggest comeback.** Measured after each hand: your lowest share of the
+  chips in play, in a match you still won.
+- **Lowest winning showdown.** The weakest five-card hand, by poker rank, to
+  win at showdown. You must have taken at least 1,000 chips from your opponent
+  on the hand, there must have been a bet on the river, and split pots don't
+  count.
+
+"Chips won" always means the chips you took from your opponent on the hand
+(your net gain), not the size of the pot.
 
 ## Getting started
 
