@@ -77,17 +77,22 @@ export function MatchView({ matchKey, seatToken, playAs, startHand }: { matchKey
     if (at !== undefined) { jumped.current = true; pb.seek(at) }
   }, [startHand, handStarts, running, pb])
 
-  // Notable hands, marked at their hand_start: showdowns; bluffs (a bet or raise
-  // after the flop with under BLUFF_EQUITY equity against a random hand, as the
-  // server annotates it for spectators); and action hands, with at least
-  // ACTION_DECISIONS decisions other than checks. Built only from events already
-  // received, so a live match or a broadcast gives nothing away.
+  // Notable hands, marked at their hand_start: showdowns; bluffs, by the same
+  // rule as the biggest-bluffer prize (arena/sideprizes.py): the last bet or
+  // raise of the hand came after the flop with under BLUFF_EQUITY equity against
+  // a random hand (as the server annotates it for spectators), the opponent
+  // folded to it, and the bettor won chips on the hand; and action hands, with
+  // at least ACTION_DECISIONS decisions other than checks. Built only from
+  // events already received, so a live match or a broadcast gives nothing away.
   const highlights = useMemo(() => {
     const out: Highlight[] = []
-    let from = 0, active = 0, flagged = false, bluffed = false
+    let from = 0, active = 0, flagged = false
+    type Bet = Extract<typeof timeline.list[number], { type: 'decision' }>
+    let lastBet: Bet | null = null     // the hand's latest bet or raise
+    let bluff: Bet | null = null       // that bet, once it got a fold and was a bluff
     const pct = (x: number) => `${Math.round(x * 100)}%`
     timeline.list.forEach((e, i) => {
-      if (e.type === 'hand_start') { from = i; active = 0; flagged = false; bluffed = false }
+      if (e.type === 'hand_start') { from = i; active = 0; flagged = false; lastBet = null; bluff = null }
       else if (e.type === 'showdown') {
         const shown = Object.keys(e.reveal).map(n => e.ranks[n] ? `${n} (${e.ranks[n]})` : n)
         out.push({ index: from, kind: 'showdown', label: `Hand ${e.hand + 1} showdown: ${shown.join(' vs ')}` })
@@ -97,13 +102,17 @@ export function MatchView({ matchKey, seatToken, playAs, startHand }: { matchKey
           flagged = true
           out.push({ index: from, kind: 'action', label: `Hand ${e.hand + 1}: a lot of action (${active}+ decisions)` })
         }
-        if (!bluffed && typeof e.equity === 'number' && e.equity < BLUFF_EQUITY) {
-          bluffed = true
-          const cards = (e.state?.your_cards ?? []).join(' ')
-          const what = e.applied.action === 'all_in' ? 'all-in' : `bets ${(e.applied.amount ?? 0).toLocaleString('en-US')}`
-          out.push({ index: from, kind: 'bluff',
-                     label: `Hand ${e.hand + 1}: ${e.bot} bluffs on the ${e.street}, ${what} with ${cards} (${pct(e.equity)} against a random hand)` })
+        const a = e.applied?.action
+        if (a === 'raise' || (a === 'all_in' && (e.applied.amount ?? 0) > (e.state?.current_bet ?? 0))) lastBet = e
+        else if (a === 'fold' && lastBet && lastBet.bot !== e.bot && lastBet.street !== 'preflop') {
+          bluff = typeof lastBet.equity === 'number' && lastBet.equity < BLUFF_EQUITY ? lastBet : null
         }
+      } else if (e.type === 'hand_end' && bluff && (e.deltas[bluff.bot] ?? 0) > 0) {
+        const b: Bet = bluff
+        const cards = (b.state?.your_cards ?? []).join(' ')
+        const what = b.applied.action === 'all_in' ? 'all-in' : `bets ${(b.applied.amount ?? 0).toLocaleString('en-US')}`
+        out.push({ index: from, kind: 'bluff',
+                   label: `Hand ${e.hand + 1}: ${b.bot} bluffs on the ${b.street}, ${what} with ${cards} (${pct(b.equity as number)} against a random hand) and wins ${e.deltas[b.bot].toLocaleString('en-US')}` })
       }
     })
     return out

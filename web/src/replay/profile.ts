@@ -15,7 +15,7 @@ export const PROFILE_COLUMNS: ProfileColumn[] = [
   { key: 'fold_to_cbet', title: 'Fold to c-bet', unit: '%', help: '% of the time it folded when the preflop raiser bet the flop. High = gives up easily.' },
   { key: 'wtsd', title: 'Showdown', unit: '%', help: 'Went to showdown: % of the hands where it saw the flop that reached showdown. High = hard to push off a hand.' },
   { key: 'won_at_sd', title: 'Won at SD', unit: '%', help: '% of its showdowns that won chips. High = its calls and bets are well chosen.' },
-  { key: 'bluff', title: 'Bluff', unit: '%', help: '% of its postflop bets and raises made with under 40% equity against a random hand (the purple timeline markers).' },
+  { key: 'bluff', title: 'Bluff', unit: '%', help: '% of its postflop bets and raises made with under 40% equity against a random hand, whether or not they worked (the purple timeline markers are only the ones that got a fold).' },
   { key: 'think_ms', title: 'Think (ms)', unit: 'ms', help: 'Average time per decision, in milliseconds.' },
 ]
 
