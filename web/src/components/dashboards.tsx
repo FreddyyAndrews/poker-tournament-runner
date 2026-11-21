@@ -285,6 +285,7 @@ export function ProfilesTable({ profiles, order }: { profiles: any; order: strin
   const pending = profiles.finished - profiles.matches
   return (
     <div data-testid="profiles">
+      <div style={{ overflowX: 'auto' }}>
       <table className="list num profiles">
         <thead><tr>
           {head('bot', 'Bot', 'Click to sort by name', false)}
@@ -298,6 +299,7 @@ export function ProfilesTable({ profiles, order }: { profiles: any; order: strin
           ))}
         </tbody>
       </table>
+      </div>
       <p className="hint">{pending > 0 ? `Counting: ${profiles.matches.toLocaleString('en-US')} of ${profiles.finished.toLocaleString('en-US')} finished matches so far. ` : ''}
         Click a heading to sort by it (again to reverse, a third time for standings order); hover for what it measures.</p>
     </div>

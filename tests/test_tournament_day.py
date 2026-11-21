@@ -239,6 +239,50 @@ def test_a_stopped_qualifier_still_shows_standings_for_its_complete_cycles(tmp_p
     assert len(p["standings"]) == 3 and sum(r["points"] for r in p["standings"]) == 3   # cycle 1 only
 
 
+def test_profile_street_statistics_on_scripted_hands():
+    from arena.profiles import match_counts, profile
+
+    def hand(n, *actions, deltas):
+        """actions: (street, bot, action, amount facing)"""
+        ev = [{"type": "hand_start", "hand": n, "order": ["a", "b"], "blinds": {"sb": 50, "bb": 100}}]
+        for street, bot, action, cur in actions:
+            ev.append({"type": "decision", "hand": n, "street": street, "bot": bot, "think_ms": 1,
+                       "applied": {"action": action, "amount": cur + 200 if action == "raise" else cur},
+                       "state": {"current_bet": cur}})
+        return ev + [{"type": "hand_end", "hand": n, "deltas": deltas}]
+
+    events = (
+        # a opens, b 3-bets, a calls; b c-bets flop, turn and river, a folds the river
+        hand(0, ("preflop", "a", "raise", 100), ("preflop", "b", "raise", 300), ("preflop", "a", "call", 500),
+             ("flop", "b", "raise", 0), ("flop", "a", "call", 200), ("turn", "b", "raise", 0), ("turn", "a", "call", 200),
+             ("river", "b", "raise", 0), ("river", "a", "fold", 200), deltas={"a": -900, "b": 900})
+        # a opens, b calls; flop checked through; b probes the turn, a folds
+        + hand(1, ("preflop", "a", "raise", 100), ("preflop", "b", "call", 300), ("flop", "b", "check", 0),
+               ("flop", "a", "check", 0), ("turn", "b", "raise", 0), ("turn", "a", "fold", 200), deltas={"a": -300, "b": 300})
+        # a opens, b calls; flop checked through; b checks the turn, a makes a delayed bet, b folds
+        + hand(2, ("preflop", "a", "raise", 100), ("preflop", "b", "call", 300), ("flop", "b", "check", 0),
+               ("flop", "a", "check", 0), ("turn", "b", "check", 0), ("turn", "a", "raise", 0), ("turn", "b", "fold", 200),
+               deltas={"a": 300, "b": -300})
+        # a opens, b 3-bets, a folds
+        + hand(3, ("preflop", "a", "raise", 100), ("preflop", "b", "raise", 300), ("preflop", "a", "fold", 500),
+               deltas={"a": -300, "b": 300})
+        # a opens, b calls; b checks, a c-bets the flop, b check-raises, a folds
+        + hand(4, ("preflop", "a", "raise", 100), ("preflop", "b", "call", 300), ("flop", "b", "check", 0),
+               ("flop", "a", "raise", 0), ("flop", "b", "raise", 200), ("flop", "a", "fold", 400), deltas={"a": -500, "b": 500})
+    )
+    c = match_counts(events)
+    a, b = profile(c["a"]), profile(c["b"])
+    assert (a["bb_100"], a["chips_100"]) == (-340.0, -34000.0) and b["bb_100"] == 340.0     # -1,700 chips in 5 hands
+    assert (b["three_bet"], a["four_bet"], a["fold_to_3bet"]) == (40.0, 0.0, 50.0)
+    assert (b["flop_cbet"], b["turn_cbet"], b["river_cbet"]) == (100.0, 100.0, 100.0)       # hand 0, b the last raiser
+    assert (a["fold_to_cbet"], a["fold_to_turn_cbet"], a["fold_to_river_cbet"]) == (0.0, 0.0, 100.0)
+    assert a["flop_cbet"] == round(100 / 3, 1) and b["fold_to_cbet"] == 0.0                 # hands 1, 2, 4
+    assert (a["turn_delayed"], b["fold_to_delayed"]) == (100.0, 100.0)                      # hand 2 (hand 1: no chance)
+    assert b["turn_probe"] == 50.0 and a["turn_probe"] is None                             # hand 1 yes, hand 2 no
+    assert (b["flop_check_raise"], a["flop_check_raise"]) == (100.0, None)
+    assert a["turn_cbet"] is None and a["river_cbet"] is None
+
+
 def test_side_prize_boards_from_a_qualifier(tmp_path):
     from arena.events import read_events
     from arena.server.progress import qualifier_progress
